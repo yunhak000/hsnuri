@@ -46,8 +46,8 @@ export const buildAggregateRows = (originalRows: TRow[]): TAggregateRow[] => {
   const map = new Map<string, number>();
 
   for (const row of originalRows) {
-    // 품목명: 상품명/품목명 둘 다 대비
-    const itemName = pick(row, [ORIGINAL_ITEM_COL, "상품명", "품목명"]).trim();
+    // 상품분류: 상품약어 -> 상품명 -> 품목명 우선순위
+    const itemName = pick(row, ["상품약어", ORIGINAL_ITEM_COL, "상품명", "품목명"]).trim();
     if (!itemName) continue;
 
     // 수량: 박스수량 or 수량 둘 다 대비 (원본 상수 ORIGINAL_BOX_COL도 유지)
@@ -95,7 +95,7 @@ export const downloadAggregateExcel = async (aggregateRows: TAggregateRow[]) => 
   const worksheet = workbook.addWorksheet("품목별 집계");
 
   worksheet.columns = [
-    { header: "품목명", key: "itemName", width: 70 },
+    { header: "상품분류", key: "itemName", width: 70 },
     { header: "총 박스수량", key: "totalBox", width: 16 },
   ];
 

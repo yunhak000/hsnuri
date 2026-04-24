@@ -350,14 +350,16 @@ export default function HomePage() {
       await saveJob(next);
       setJob(next);
 
-      const unmatchedKeys = new Set(
-        unmatched.map((u) => u.customerOrderNo),
+      const unmatchedReplyKeys = new Set(
+        unmatched
+          .filter((u) => String(u.tracking ?? "").trim() !== "")
+          .map((u) => u.customerOrderNo),
       );
 
       setLocalResult({
         unmatched,
         duplicates,
-        matchedCount: map.size - unmatchedKeys.size,
+        matchedCount: map.size - unmatchedReplyKeys.size,
         totalReplyCount: map.size,
       });
 
@@ -547,7 +549,7 @@ export default function HomePage() {
             </div>
 
             <p className={ui.hint}>
-              * 품목별 집계는 “품목명 동일” 기준으로 묶어서 수량 합산합니다.
+              * 품목별 집계는 “상품약어 → 상품명 → 품목명” 우선순위로 분류해 수량 합산합니다.
             </p>
           </div>
         </section>

@@ -14,6 +14,7 @@ type TRow = Record<string, unknown>;
  */
 const DEFAULT_SENDER_NAME = "한섬누리";
 const DEFAULT_SENDER_TEL = "070-7107-3874";
+const FIXED_ETC_VALUE = "검사원: 신종석 2-006-201";
 
 /**
  * ===============================
@@ -123,7 +124,8 @@ export const buildCjGroupedRows = (originalHeaders: string[], originalRows: TRow
   const groups = new Map<string, TRow[]>();
 
   for (const row of originalRows) {
-    const itemName = pick(row, [ORIGINAL_ITEM_COL, "상품명", "품목명"]).trim();
+    // 분류 우선순위: 상품약어 -> 상품명 -> 품목명
+    const itemName = pick(row, ["상품약어", ORIGINAL_ITEM_COL, "상품명", "품목명"]).trim();
 
     if (!itemName) continue;
 
@@ -135,6 +137,12 @@ export const buildCjGroupedRows = (originalHeaders: string[], originalRows: TRow
 
     for (const cjHeader of CJ_UPLOAD_HEADERS) {
       const normalized = normalizeHeader(cjHeader);
+
+      // "기타"는 항상 고정값 강제 입력
+      if (normalized === normalizeHeader("기타")) {
+        out[cjHeader] = FIXED_ETC_VALUE;
+        continue;
+      }
 
       // 고객주문번호는 강제 주입
       if (normalized === normalizeHeader("고객주문번호")) {
