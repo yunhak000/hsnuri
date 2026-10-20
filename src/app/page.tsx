@@ -55,50 +55,51 @@ const STEP_META: Array<{ n: TStep; label: string; desc: string }> = [
 ];
 
 /**
- * ✅ 공통 UI 클래스 (가독성 + 재사용)
- * - 심플 + 스무스한 마법사 UI 기준으로 재정리
+ * ✅ 공통 UI 클래스 — Toss 스타일 (심플 / 밝은 배경 / 블루 포인트)
  */
 const ui = {
-  page: "min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900",
-  container: "mx-auto max-w-2xl px-5 py-10 md:py-14 space-y-8",
-  headerWrap: "space-y-1.5 text-center",
-  title: "text-2xl md:text-3xl font-bold tracking-tight",
-  subtitle: "text-sm text-slate-500",
-  card: "rounded-3xl border border-slate-200/80 bg-white/90 shadow-[0_1px_3px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.12)] backdrop-blur",
-  cardBody: "p-6 md:p-8 space-y-5",
-  cardTitle: "text-xl font-bold tracking-tight",
-  cardDesc: "text-sm text-slate-500",
-  hint: "text-sm text-slate-500",
-  divider: "h-px bg-slate-100",
+  page: "min-h-screen bg-[#f2f4f6] text-[#191f28]",
+  container: "mx-auto flex min-h-screen max-w-md flex-col px-5 pt-8 pb-28",
+  title: "text-[26px] font-bold leading-snug tracking-tight text-[#191f28]",
+  subtitle: "mt-1.5 text-[15px] text-[#8b95a1]",
+  cardTitle: "text-[22px] font-bold leading-snug tracking-tight text-[#191f28]",
+  cardDesc: "mt-1 text-[15px] text-[#8b95a1]",
+  hint: "text-[13px] leading-relaxed text-[#8b95a1]",
+  divider: "h-px bg-[#f2f4f6]",
   alertError:
-    "whitespace-pre-line rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700",
-  btnRow: "flex flex-col gap-2.5",
+    "whitespace-pre-line rounded-2xl bg-[#fff0f0] px-4 py-3.5 text-[14px] font-medium leading-relaxed text-[#f04452]",
+  // Step2 다운로드: 리스트형 카드 버튼
+  btnRow: "flex flex-col gap-3",
+  listBtn:
+    "group flex w-full items-center gap-3.5 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 hover:bg-[#f9fafb] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+  listIcon:
+    "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e8f3ff] text-xl",
+  listTitle: "text-[15px] font-bold text-[#191f28]",
+  listDesc: "mt-0.5 text-[13px] text-[#8b95a1]",
+  // 결과(step4) 보조 버튼
   btnPrimary:
-    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow-md active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#3182f6] px-5 py-4 text-[16px] font-bold text-white transition-all duration-200 hover:bg-[#1b64da] active:scale-[0.98] disabled:bg-[#dbe3ed] disabled:text-[#9fb0c4] disabled:cursor-not-allowed disabled:active:scale-100",
   btnSecondary:
-    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-900 transition-all duration-200 hover:bg-slate-200 active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
-  btnGhost:
-    "inline-flex items-center justify-center gap-1.5 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
-  btnNext:
-    "inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow-md active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
-  btnDanger:
-    "inline-flex items-center justify-center gap-1.5 rounded-2xl px-4 py-3 text-sm font-semibold text-red-600 transition-all duration-200 hover:bg-red-50 active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
-  fileWrap:
-    "rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 p-5 transition-colors duration-200 hover:border-slate-300",
-  fileLabel: "text-sm font-semibold text-slate-700",
-  fileInput:
-    "mt-3 block w-full cursor-pointer rounded-xl border border-slate-200 bg-white text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-white file:transition-colors hover:file:bg-slate-800",
-  statsGrid: "grid grid-cols-2 gap-3 text-sm",
-  stat: "rounded-2xl border border-slate-100 bg-slate-50/70 p-4",
-  statKey: "text-xs font-medium text-slate-500",
-  statVal: "mt-1 text-lg font-bold text-slate-900",
-  tableWrap: "max-h-56 overflow-auto rounded-2xl border border-slate-200",
-  table: "w-full text-sm",
-  thead: "sticky top-0 bg-slate-50",
-  th: "border-b border-slate-200 p-2.5 text-left font-semibold text-slate-700",
-  td: "border-b border-slate-100 p-2.5 text-slate-800",
-  badge:
-    "inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600",
+    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#f2f4f6] px-5 py-4 text-[16px] font-bold text-[#4e5968] transition-all duration-200 hover:bg-[#e5e8eb] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+  // 하단 고정 CTA: flex-1로 두어 1개일 땐 100%, 2개일 땐 50:50
+  ctaPrimary:
+    "flex flex-1 items-center justify-center rounded-2xl bg-[#3182f6] px-5 py-4 text-[17px] font-bold text-white transition-all duration-200 hover:bg-[#1b64da] active:scale-[0.98] disabled:bg-[#dbe3ed] disabled:text-[#9fb0c4] disabled:cursor-not-allowed disabled:active:scale-100",
+  ctaSecondary:
+    "flex flex-1 items-center justify-center rounded-2xl bg-[#f2f4f6] px-5 py-4 text-[17px] font-bold text-[#4e5968] transition-all duration-200 hover:bg-[#e5e8eb] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+  // 드롭존
+  dropzone:
+    "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#d1d6db] bg-white px-5 py-9 text-center transition-colors duration-200 hover:border-[#3182f6] hover:bg-[#f7faff]",
+  statsGrid: "grid grid-cols-2 gap-2.5",
+  stat: "rounded-2xl bg-white p-4",
+  statKey: "text-[13px] font-medium text-[#8b95a1]",
+  statVal: "mt-1 text-[20px] font-bold text-[#191f28]",
+  tableWrap: "max-h-56 overflow-auto rounded-2xl bg-white",
+  table: "w-full text-[13px]",
+  thead: "sticky top-0 bg-[#f9fafb]",
+  th: "p-2.5 text-left font-semibold text-[#6b7684]",
+  td: "border-t border-[#f2f4f6] p-2.5 text-[#4e5968]",
+  successTag:
+    "pop-in flex items-center gap-1.5 text-[14px] font-semibold text-[#3182f6]",
 };
 
 export default function HomePage() {
@@ -186,15 +187,6 @@ export default function HomePage() {
   // ✅ 각 단계 완료 여부 (= 다음 단계로 넘어갈 수 있는 조건)
   const step1Done = !!job?.originalRows?.length;
   const step3Done = !!localResult;
-
-  // 특정 단계로 이동 가능한지 (진행 바/이전 버튼 용)
-  const canGoTo = (target: TStep): boolean => {
-    if (target <= step) return true; // 뒤로 가기는 항상 허용
-    if (target === 2) return step1Done;
-    if (target === 3) return step1Done && step2Done;
-    if (target === 4) return step1Done && step2Done && step3Done;
-    return true;
-  };
 
   const goNext = () => setStep((s) => (s < 4 ? ((s + 1) as TStep) : s));
   const goPrev = () => setStep((s) => (s > 1 ? ((s - 1) as TStep) : s));
@@ -461,384 +453,380 @@ export default function HomePage() {
   };
 
   const currentMeta = STEP_META[step - 1];
+  const progressPct = ((step - 1) / (STEP_META.length - 1)) * 100;
 
   return (
     <div className={ui.page}>
       <main className={ui.container}>
-        {/* Header */}
-        <header className={ui.headerWrap}>
-          <h1 className={ui.title}>한섬누리 출고 엑셀 도구</h1>
-          <p className={ui.subtitle}>
-            원본 업로드부터 운송장 반영까지, 한 단계씩 진행하세요
-          </p>
-        </header>
-
-        {/* Progress bar (버튼으로만 이동, 완료 단계는 되돌아가기 허용) */}
-        <nav className="space-y-3">
-          <div className="flex items-center">
-            {STEP_META.map((s, i) => {
-              const isActive = step === s.n;
-              const isDone = step > s.n;
-              const reachable = canGoTo(s.n);
-              return (
-                <div
-                  key={s.n}
-                  className="flex flex-1 items-center last:flex-none"
-                >
-                  <button
-                    type="button"
-                    disabled={!reachable || loading.on}
-                    onClick={() => reachable && setStep(s.n)}
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${
-                      isActive
-                        ? "bg-slate-900 text-white shadow-md ring-4 ring-slate-900/10"
-                        : isDone
-                          ? "bg-slate-900 text-white"
-                          : "bg-slate-100 text-slate-400"
-                    } ${reachable && !isActive ? "cursor-pointer hover:scale-105" : "cursor-default"} disabled:cursor-not-allowed`}
-                    title={s.label}
-                  >
-                    {isDone ? "✓" : s.n}
-                  </button>
-                  {i < STEP_META.length - 1 && (
-                    <div className="mx-1.5 h-0.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-slate-900 transition-all duration-500"
-                        style={{ width: step > s.n ? "100%" : "0%" }}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex items-baseline justify-between px-0.5">
-            <span className="text-sm font-semibold text-slate-900">
-              {step}. {currentMeta.label}
+        {/* ===== 상단: 진행 게이지 ===== */}
+        <div className="mb-7">
+          <div className="mb-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={goPrev}
+              disabled={step === 1 || loading.on}
+              className="-ml-1 flex h-8 w-8 items-center justify-center rounded-full text-xl text-[#4e5968] transition-colors hover:bg-[#e5e8eb] disabled:opacity-0"
+              aria-label="이전"
+            >
+              ‹
+            </button>
+            <span className="text-[13px] font-semibold text-[#8b95a1]">
+              {step} / {STEP_META.length}
             </span>
-            <span className="text-xs text-slate-400">{step} / 4</span>
           </div>
-        </nav>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#e5e8eb]">
+            <div
+              className="h-full rounded-full bg-[#3182f6] transition-all duration-500 ease-out"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
 
-        {/* Error */}
-        {error && <div className={ui.alertError}>{error}</div>}
+        {/* ===== 단계 헤더 (토스식 큰 타이틀) ===== */}
+        <div key={`h-${step}`} className="step-anim mb-6">
+          <h1 className={ui.cardTitle}>{currentMeta.label}</h1>
+          <p className={ui.cardDesc}>{currentMeta.desc}</p>
+        </div>
 
-        {/* Loading Overlay */}
+        {/* ===== Error ===== */}
+        {error && <div className={`${ui.alertError} pop-in mb-4`}>{error}</div>}
+
+        {/* ===== Loading Overlay ===== */}
         {loading.on && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-[2px]">
-            <div className="flex items-center gap-3 rounded-2xl bg-white p-6 shadow-lg">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
-              <div className="text-sm font-semibold text-slate-900">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#191f28]/25 backdrop-blur-[2px]">
+            <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-5 shadow-xl">
+              <div className="h-5 w-5 animate-spin rounded-full border-[2.5px] border-[#e5e8eb] border-t-[#3182f6]" />
+              <div className="text-[15px] font-bold text-[#191f28]">
                 {loading.text}
               </div>
             </div>
           </div>
         )}
 
-        {/* Step card (한 번에 한 단계만) */}
-        <section key={step} className={`${ui.card} step-anim`}>
-          <div className={ui.cardBody}>
-            <div className="space-y-1">
-              <h2 className={ui.cardTitle}>{currentMeta.label}</h2>
-              <p className={ui.cardDesc}>{currentMeta.desc}</p>
-            </div>
-
-            {/* ===== Step 1 ===== */}
-            {step === 1 && (
-              <div className="space-y-4">
-                <div className={ui.fileWrap}>
-                  <div className={ui.fileLabel}>원본 엑셀(.xlsx)</div>
-                  <input
-                    ref={originalInputRef}
-                    type="file"
-                    accept=".xlsx"
-                    disabled={loading.on}
-                    className={ui.fileInput}
-                    onChange={(e) =>
-                      onUploadOriginal(e.target.files?.[0] ?? null)
-                    }
-                  />
-
-                  {job?.originalFileName ? (
-                    <div className="mt-3 flex items-center gap-1.5 text-sm text-slate-700">
-                      <span className="text-emerald-500">✓</span>
-                      <span className="font-semibold text-slate-900">
-                        {job.originalFileName}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="mt-3 text-sm text-slate-400">
-                      업로드하면 다음 단계로 넘어갈 수 있어요.
-                    </div>
-                  )}
+        {/* ===== 단계 본문 (한 번에 한 단계) ===== */}
+        <div key={`b-${step}`} className="step-anim flex-1 space-y-5">
+          {/* Step 1 */}
+          {step === 1 && (
+            <>
+              <label className={ui.dropzone}>
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e8f3ff] text-3xl">
+                  📄
                 </div>
+                <div className="text-[15px] font-bold text-[#191f28]">
+                  원본 엑셀 올리기
+                </div>
+                <div className="text-[13px] text-[#8b95a1]">
+                  .xlsx 파일을 선택하세요
+                </div>
+                <input
+                  ref={originalInputRef}
+                  type="file"
+                  accept=".xlsx"
+                  disabled={loading.on}
+                  className="hidden"
+                  onChange={(e) =>
+                    onUploadOriginal(e.target.files?.[0] ?? null)
+                  }
+                />
+              </label>
 
-                {job?.originalFileName && (
+              {job?.originalFileName && (
+                <div className="pop-in space-y-3">
+                  <div className="flex items-center gap-2.5 rounded-2xl bg-white p-4">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#3182f6] text-[13px] text-white">
+                      ✓
+                    </span>
+                    <span className="flex-1 truncate text-[15px] font-semibold text-[#191f28]">
+                      {job.originalFileName}
+                    </span>
+                  </div>
                   <div className={ui.stat}>
                     <div className={ui.statKey}>총 수량</div>
                     <div className={ui.statVal}>
-                      {totalQuantity.toLocaleString()}
+                      {totalQuantity.toLocaleString()}개
                     </div>
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* ===== Step 2 ===== */}
-            {step === 2 && (
-              <div className="space-y-4">
-                <div className={ui.btnRow}>
-                  <button
-                    className={ui.btnPrimary}
-                    disabled={loading.on}
-                    onClick={onDownloadAggregate}
-                  >
-                    📊 품목별 집계 엑셀 다운로드
-                  </button>
-
-                  <button
-                    className={ui.btnPrimary}
-                    disabled={loading.on}
-                    onClick={onDownloadCjZip}
-                  >
-                    🗂️ CJ 업로드용 품목별 ZIP 다운로드
-                  </button>
-
-                  <button
-                    className={ui.btnPrimary}
-                    disabled={loading.on}
-                    onClick={onDownloadCjSingle}
-                  >
-                    📄 CJ 업로드용 통합 엑셀 다운로드
-                  </button>
                 </div>
+              )}
+            </>
+          )}
 
-                <div className={ui.divider} />
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">집계 건수</span>
-                  <span className="font-semibold text-slate-900">
-                    {aggregateRows.length}
+          {/* Step 2 */}
+          {step === 2 && (
+            <>
+              <div className={ui.btnRow}>
+                <button
+                  className={ui.listBtn}
+                  disabled={loading.on}
+                  onClick={onDownloadAggregate}
+                >
+                  <span className={ui.listIcon}>📊</span>
+                  <span className="flex-1">
+                    <span className={ui.listTitle}>품목별 집계 엑셀</span>
+                    <span className={ui.listDesc}>품목별 수량을 합산한 표</span>
                   </span>
-                </div>
+                  <span className="text-[#c4cad1]">›</span>
+                </button>
 
+                <button
+                  className={ui.listBtn}
+                  disabled={loading.on}
+                  onClick={onDownloadCjZip}
+                >
+                  <span className={ui.listIcon}>🗂️</span>
+                  <span className="flex-1">
+                    <span className={ui.listTitle}>CJ 업로드용 품목별 ZIP</span>
+                    <span className={ui.listDesc}>품목별로 파일이 나뉨</span>
+                  </span>
+                  <span className="text-[#c4cad1]">›</span>
+                </button>
+
+                <button
+                  className={ui.listBtn}
+                  disabled={loading.on}
+                  onClick={onDownloadCjSingle}
+                >
+                  <span className={ui.listIcon}>📄</span>
+                  <span className="flex-1">
+                    <span className={ui.listTitle}>CJ 업로드용 통합 엑셀</span>
+                    <span className={ui.listDesc}>하나의 파일로 합쳐짐</span>
+                  </span>
+                  <span className="text-[#c4cad1]">›</span>
+                </button>
+              </div>
+
+              <p className={ui.hint}>
+                최소 1개를 다운로드하면 다음 단계로 넘어갈 수 있어요. 집계는
+                “상품약어 → 상품명 → 품목명” 순으로 분류해 합산합니다.
+              </p>
+
+              {step2Done && (
+                <div className={ui.successTag}>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3182f6] text-[11px] text-white">
+                    ✓
+                  </span>
+                  산출물을 받았어요. 다음으로 진행하세요.
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Step 3 */}
+          {step === 3 && (
+            <>
+              <label className={ui.dropzone}>
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e8f3ff] text-3xl">
+                  📦
+                </div>
+                <div className="text-[15px] font-bold text-[#191f28]">
+                  CJ 회신 엑셀 올리기
+                </div>
+                <div className="text-[13px] text-[#8b95a1]">
+                  .xlsx 여러 개를 한 번에 선택할 수 있어요
+                </div>
+                <input
+                  ref={replyInputRef}
+                  type="file"
+                  accept=".xlsx"
+                  multiple
+                  disabled={loading.on}
+                  className="hidden"
+                  onChange={(e) => onUploadReplies(e.target.files)}
+                />
+              </label>
+
+              <div className="rounded-2xl bg-white p-4">
                 <p className={ui.hint}>
-                  최소 1개를 다운로드하면 다음 단계로 넘어갈 수 있어요. 집계는
-                  “상품약어 → 상품명 → 품목명” 순으로 분류해 합산합니다.
+                  • 같은 파일을 다시 올리면 경고 후 제외돼요.
+                  <br />• 서로 다른 파일에 같은 고객주문번호가 있으면{" "}
+                  <b className="text-[#4e5968]">전체 업로드가 차단</b>됩니다.
                 </p>
-
-                {step2Done && (
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
-                    <span>✓</span> 산출물을 받았어요. 다음으로 진행하세요.
-                  </div>
-                )}
               </div>
-            )}
 
-            {/* ===== Step 3 ===== */}
-            {step === 3 && (
-              <div className="space-y-4">
-                <div className={ui.fileWrap}>
-                  <div className={ui.fileLabel}>
-                    CJ 회신 엑셀(.xlsx) — 여러 개 선택 가능
-                  </div>
-                  <input
-                    ref={replyInputRef}
-                    type="file"
-                    accept=".xlsx"
-                    multiple
-                    disabled={loading.on}
-                    className={ui.fileInput}
-                    onChange={(e) => onUploadReplies(e.target.files)}
-                  />
-                  <p className="mt-3 text-sm text-slate-500">
-                    • 같은 파일을 다시 올리면 경고 후 제외돼요.
-                    <br />• 서로 다른 파일에 동일 고객주문번호가 있으면{" "}
-                    <b>전체 업로드가 차단</b>됩니다.
-                  </p>
+              {step3Done && (
+                <div className={ui.successTag}>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3182f6] text-[11px] text-white">
+                    ✓
+                  </span>
+                  회신이 반영됐어요. 다음으로 진행하세요.
                 </div>
+              )}
+            </>
+          )}
 
-                {step3Done && (
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
-                    <span>✓</span> 회신이 반영됐어요. 다음으로 진행하세요.
+          {/* Step 4 */}
+          {step === 4 && (
+            <>
+              {localResult ? (
+                <div className={ui.statsGrid}>
+                  <div className={ui.stat}>
+                    <div className={ui.statKey}>총 수량</div>
+                    <div className={ui.statVal}>{totalQuantity}</div>
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* ===== Step 4 ===== */}
-            {step === 4 && (
-              <div className="space-y-4">
-                {localResult ? (
-              <div className={ui.statsGrid}>
-                <div className={ui.stat}>
-                  <div className={ui.statKey}>총 수량</div>
-                  <div className={ui.statVal}>{totalQuantity}</div>
-                </div>
-                <div className={ui.stat}>
-                  <div className={ui.statKey}>회신 키 수</div>
-                  <div className={ui.statVal}>
-                    {localResult.totalReplyCount}
+                  <div className={ui.stat}>
+                    <div className={ui.statKey}>회신 키 수</div>
+                    <div className={ui.statVal}>
+                      {localResult.totalReplyCount}
+                    </div>
+                  </div>
+                  <div className={ui.stat}>
+                    <div className={ui.statKey}>매핑 성공(추정)</div>
+                    <div className={`${ui.statVal} text-[#3182f6]`}>
+                      {localResult.matchedCount}
+                    </div>
+                  </div>
+                  <div className={ui.stat}>
+                    <div className={ui.statKey}>미매칭</div>
+                    <div
+                      className={`${ui.statVal} ${localResult.unmatched.length > 0 ? "text-[#f04452]" : ""}`}
+                    >
+                      {localResult.unmatched.length}
+                    </div>
+                  </div>
+                  <div className={`${ui.stat} col-span-2`}>
+                    <div className={ui.statKey}>원본 중복키</div>
+                    <div className={ui.statVal}>
+                      {localResult.duplicates.length}
+                    </div>
                   </div>
                 </div>
-                <div className={ui.stat}>
-                  <div className={ui.statKey}>매핑 성공(추정)</div>
-                  <div className={ui.statVal}>{localResult.matchedCount}</div>
-                </div>
-                <div className={ui.stat}>
-                  <div className={ui.statKey}>미매칭</div>
-                  <div className={ui.statVal}>
-                    {localResult.unmatched.length}
-                  </div>
-                </div>
-                <div className={ui.stat}>
-                  <div className={ui.statKey}>원본 중복키</div>
-                  <div className={ui.statVal}>
-                    {localResult.duplicates.length}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                회신 업로드 후 결과가 표시됩니다.
-              </div>
-            )}
-
-            <div className={ui.btnRow}>
-              <button
-                className={ui.btnPrimary}
-                disabled={!job || loading.on || !step3Done}
-                onClick={onDownloadFinal}
-              >
-                ⬇️ 최종 원본 다운로드
-              </button>
-
-              <button
-                className={ui.btnSecondary}
-                disabled={
-                  !localResult ||
-                  localResult.unmatched.length === 0 ||
-                  loading.on
-                }
-                onClick={onDownloadUnmatched}
-                title={
-                  !localResult || localResult.unmatched.length === 0
-                    ? "미매칭이 없습니다"
-                    : ""
-                }
-              >
-                미매칭 목록 다운로드
-              </button>
-            </div>
-
-            {/* Unmatched preview */}
-            {localResult?.unmatched?.length ? (
-              <div className="space-y-2">
-                <div className="text-sm font-semibold text-slate-900">
-                  미매칭 리스트 (상위 20개)
-                </div>
-                <div className={ui.tableWrap}>
-                  <table className={ui.table}>
-                    <thead className={ui.thead}>
-                      <tr>
-                        <th className={ui.th}>고객주문번호</th>
-                        <th className={ui.th}>운송장번호</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {localResult.unmatched.slice(0, 20).map((u) => (
-                        <tr key={`${u.customerOrderNo}-${u.tracking}`}>
-                          <td className={ui.td}>{u.customerOrderNo}</td>
-                          <td className={ui.td}>{u.tracking}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Duplicate key preview */}
-            {localResult?.duplicates?.length ? (
-              <div className="space-y-2">
-                <div className="text-sm font-semibold text-slate-900">
-                  원본 중복키 (상위 20개)
-                </div>
-                <div className={ui.tableWrap}>
-                  <table className={ui.table}>
-                    <thead className={ui.thead}>
-                      <tr>
-                        <th className={ui.th}>상품주문번호</th>
-                        <th className={ui.th}>중복 개수</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {localResult.duplicates.slice(0, 20).map((d) => (
-                        <tr key={d.key}>
-                          <td className={ui.td}>{d.key}</td>
-                          <td className={ui.td}>{d.count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
-              </div>
-            )}
-
-            <div className={ui.divider} />
-
-            {/* ===== Step navigation ===== */}
-            <div className="flex items-center gap-2">
-              {step > 1 ? (
-                <button
-                  type="button"
-                  className={ui.btnGhost}
-                  disabled={loading.on}
-                  onClick={goPrev}
-                >
-                  ← 이전
-                </button>
               ) : (
-                <span />
+                <div className="rounded-2xl bg-white p-5 text-center text-[14px] text-[#8b95a1]">
+                  회신 업로드 후 결과가 표시됩니다.
+                </div>
               )}
 
-              <div className="flex-1" />
+              <div className={ui.btnRow}>
+                <button
+                  className={ui.btnPrimary}
+                  disabled={!job || loading.on || !step3Done}
+                  onClick={onDownloadFinal}
+                >
+                  최종 원본 다운로드
+                </button>
 
-              {step < 4 ? (
                 <button
-                  type="button"
-                  className={ui.btnNext}
-                  disabled={!nextEnabled || loading.on}
-                  onClick={goNext}
-                  title={!nextEnabled ? "이 단계를 먼저 완료해주세요" : ""}
+                  className={ui.btnSecondary}
+                  disabled={
+                    !localResult ||
+                    localResult.unmatched.length === 0 ||
+                    loading.on
+                  }
+                  onClick={onDownloadUnmatched}
+                  title={
+                    !localResult || localResult.unmatched.length === 0
+                      ? "미매칭이 없습니다"
+                      : ""
+                  }
                 >
-                  다음 →
+                  미매칭 목록 다운로드
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  className={ui.btnDanger}
-                  disabled={loading.on}
-                  onClick={() => {
-                    if (confirm("모든 작업을 초기화하고 처음부터 시작할까요?"))
-                      onReset();
-                  }}
-                >
-                  처음부터 다시
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
+              </div>
+
+              {/* Unmatched preview */}
+              {localResult?.unmatched?.length ? (
+                <div className="space-y-2">
+                  <div className="px-1 text-[14px] font-bold text-[#191f28]">
+                    미매칭 리스트{" "}
+                    <span className="text-[#8b95a1]">(상위 20개)</span>
+                  </div>
+                  <div className={ui.tableWrap}>
+                    <table className={ui.table}>
+                      <thead className={ui.thead}>
+                        <tr>
+                          <th className={ui.th}>고객주문번호</th>
+                          <th className={ui.th}>운송장번호</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {localResult.unmatched.slice(0, 20).map((u) => (
+                          <tr key={`${u.customerOrderNo}-${u.tracking}`}>
+                            <td className={ui.td}>{u.customerOrderNo}</td>
+                            <td className={ui.td}>{u.tracking}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Duplicate key preview */}
+              {localResult?.duplicates?.length ? (
+                <div className="space-y-2">
+                  <div className="px-1 text-[14px] font-bold text-[#191f28]">
+                    원본 중복키{" "}
+                    <span className="text-[#8b95a1]">(상위 20개)</span>
+                  </div>
+                  <div className={ui.tableWrap}>
+                    <table className={ui.table}>
+                      <thead className={ui.thead}>
+                        <tr>
+                          <th className={ui.th}>상품주문번호</th>
+                          <th className={ui.th}>중복 개수</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {localResult.duplicates.slice(0, 20).map((d) => (
+                          <tr key={d.key}>
+                            <td className={ui.td}>{d.key}</td>
+                            <td className={ui.td}>{d.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
 
         {/* Footer hint */}
-        <footer className="text-center text-xs text-slate-400">
-          로컬에서만 처리되며(브라우저), 업로드한 파일은 서버로 전송되지
-          않습니다.
+        <footer className="mt-8 text-center text-[12px] text-[#b0b8c1]">
+          모든 처리는 브라우저에서만 이뤄지며, 파일은 서버로 전송되지 않아요.
         </footer>
       </main>
+
+      {/* ===== 하단 고정 CTA 바 ===== */}
+      <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#f2f4f6] via-[#f2f4f6] to-transparent pt-5">
+        <div className="mx-auto flex max-w-md gap-2.5 px-5 pb-5">
+          {step > 1 && (
+            <button
+              type="button"
+              className={ui.ctaSecondary}
+              disabled={loading.on}
+              onClick={goPrev}
+            >
+              이전
+            </button>
+          )}
+
+          {step < 4 ? (
+            <button
+              type="button"
+              className={ui.ctaPrimary}
+              disabled={!nextEnabled || loading.on}
+              onClick={goNext}
+              title={!nextEnabled ? "이 단계를 먼저 완료해주세요" : ""}
+            >
+              다음
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={ui.ctaPrimary}
+              disabled={loading.on}
+              onClick={() => {
+                if (confirm("모든 작업을 초기화하고 처음부터 시작할까요?"))
+                  onReset();
+              }}
+            >
+              처음부터 다시
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f2f4f6; /* toss gray-50 */
+  --foreground: #191f28; /* toss gray-900 */
+  --toss-blue: #3182f6;
 }
 
 @theme inline {
@@ -15,14 +16,17 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
+    "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ===== Wizard step transition ===== */
 @keyframes stepIn {
   0% {
     opacity: 0;
-    transform: translateY(8px) scale(0.995);
+    transform: translateY(10px) scale(0.99);
   }
   100% {
     opacity: 1;
@@ -31,11 +35,27 @@ body {
 }
 
 .step-anim {
-  animation: stepIn 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: stepIn 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pop-in {
+  animation: popIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .step-anim {
+  .step-anim,
+  .pop-in {
     animation: none;
   }
 }
