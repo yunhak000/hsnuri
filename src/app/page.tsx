@@ -47,54 +47,64 @@ const getErrorMessage = (e: unknown) => {
   }
 };
 
+const STEP_META: Array<{ n: TStep; label: string; desc: string }> = [
+  { n: 1, label: "원본 업로드", desc: "당일 출고 원본 엑셀을 올려주세요" },
+  { n: 2, label: "산출물 생성", desc: "필요한 산출물을 최소 1개 받아주세요" },
+  { n: 3, label: "회신 업로드", desc: "CJ 운송장 회신 파일을 올려주세요" },
+  { n: 4, label: "최종 다운로드", desc: "운송장이 반영된 결과를 받아주세요" },
+];
+
 /**
  * ✅ 공통 UI 클래스 (가독성 + 재사용)
- * - 너무 어두운 느낌을 없애고, 카드/버튼을 눈에 띄게 조정
+ * - 심플 + 스무스한 마법사 UI 기준으로 재정리
  */
 const ui = {
-  page: "min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900",
-  container: "mx-auto max-w-4xl p-6 md:p-10 space-y-6",
-  headerWrap: "space-y-2",
+  page: "min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900",
+  container: "mx-auto max-w-2xl px-5 py-10 md:py-14 space-y-8",
+  headerWrap: "space-y-1.5 text-center",
   title: "text-2xl md:text-3xl font-bold tracking-tight",
-  subtitle: "text-sm md:text-base text-slate-600",
-  card: "rounded-2xl border border-slate-200 bg-white shadow-sm",
-  cardBody: "p-5 md:p-6 space-y-4",
-  cardTitle: "text-lg font-semibold",
-  hint: "text-sm text-slate-600",
-  divider: "h-px bg-slate-200",
-  pillRow: "flex gap-2 text-sm",
-  pill: "flex-1 rounded-xl border px-3 py-3 text-center",
-  pillActive:
-    "border-slate-900 bg-slate-900 text-white font-semibold shadow-sm",
-  pillInactive: "border-slate-200 bg-white text-slate-700",
+  subtitle: "text-sm text-slate-500",
+  card: "rounded-3xl border border-slate-200/80 bg-white/90 shadow-[0_1px_3px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.12)] backdrop-blur",
+  cardBody: "p-6 md:p-8 space-y-5",
+  cardTitle: "text-xl font-bold tracking-tight",
+  cardDesc: "text-sm text-slate-500",
+  hint: "text-sm text-slate-500",
+  divider: "h-px bg-slate-100",
   alertError:
-    "whitespace-pre-line rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700",
-  btnRow: "flex flex-wrap gap-2",
+    "whitespace-pre-line rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700",
+  btnRow: "flex flex-col gap-2.5",
   btnPrimary:
-    "inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed",
+    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow-md active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
   btnSecondary:
-    "inline-flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed",
+    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-900 transition-all duration-200 hover:bg-slate-200 active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+  btnGhost:
+    "inline-flex items-center justify-center gap-1.5 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+  btnNext:
+    "inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow-md active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
   btnDanger:
-    "inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed",
-  fileWrap: "rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4",
-  fileLabel: "text-sm font-semibold text-slate-800",
+    "inline-flex items-center justify-center gap-1.5 rounded-2xl px-4 py-3 text-sm font-semibold text-red-600 transition-all duration-200 hover:bg-red-50 active:scale-[0.985] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+  fileWrap:
+    "rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 p-5 transition-colors duration-200 hover:border-slate-300",
+  fileLabel: "text-sm font-semibold text-slate-700",
   fileInput:
-    "mt-2 block w-full cursor-pointer rounded-lg border border-slate-200 bg-white text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800",
+    "mt-3 block w-full cursor-pointer rounded-xl border border-slate-200 bg-white text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-white file:transition-colors hover:file:bg-slate-800",
   statsGrid: "grid grid-cols-2 gap-3 text-sm",
-  stat: "rounded-xl border border-slate-200 bg-white p-3",
-  statKey: "text-slate-600",
-  statVal: "font-semibold text-slate-900",
-  tableWrap: "max-h-56 overflow-auto rounded-xl border border-slate-200",
+  stat: "rounded-2xl border border-slate-100 bg-slate-50/70 p-4",
+  statKey: "text-xs font-medium text-slate-500",
+  statVal: "mt-1 text-lg font-bold text-slate-900",
+  tableWrap: "max-h-56 overflow-auto rounded-2xl border border-slate-200",
   table: "w-full text-sm",
   thead: "sticky top-0 bg-slate-50",
-  th: "border-b border-slate-200 p-2 text-left font-semibold text-slate-700",
-  td: "border-b border-slate-100 p-2 text-slate-800",
+  th: "border-b border-slate-200 p-2.5 text-left font-semibold text-slate-700",
+  td: "border-b border-slate-100 p-2.5 text-slate-800",
   badge:
-    "inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700",
+    "inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600",
 };
 
 export default function HomePage() {
   const [step, setStep] = useState<TStep>(1);
+  // ✅ 2단계: 산출물을 최소 1개 다운로드했는지 (다음 단계 활성화 조건)
+  const [step2Done, setStep2Done] = useState<boolean>(false);
   const [loading, setLoading] = useState<{ on: boolean; text: string }>({
     on: false,
     text: "",
@@ -173,9 +183,27 @@ export default function HomePage() {
 
   const setBusy = (on: boolean, text = "") => setLoading({ on, text });
 
-  const canStep2 = !!job?.originalRows?.length;
-  const canStep3 = canStep2;
-  const canStep4 = canStep3;
+  // ✅ 각 단계 완료 여부 (= 다음 단계로 넘어갈 수 있는 조건)
+  const step1Done = !!job?.originalRows?.length;
+  const step3Done = !!localResult;
+
+  // 특정 단계로 이동 가능한지 (진행 바/이전 버튼 용)
+  const canGoTo = (target: TStep): boolean => {
+    if (target <= step) return true; // 뒤로 가기는 항상 허용
+    if (target === 2) return step1Done;
+    if (target === 3) return step1Done && step2Done;
+    if (target === 4) return step1Done && step2Done && step3Done;
+    return true;
+  };
+
+  const goNext = () => setStep((s) => (s < 4 ? ((s + 1) as TStep) : s));
+  const goPrev = () => setStep((s) => (s > 1 ? ((s - 1) as TStep) : s));
+
+  // 현재 단계에서 "다음" 버튼 활성화 조건
+  const nextEnabled =
+    (step === 1 && step1Done) ||
+    (step === 2 && step2Done) ||
+    (step === 3 && step3Done);
 
   /**
    * ✅ 전체 리셋
@@ -190,6 +218,7 @@ export default function HomePage() {
 
     setJob(null);
     setLocalResult(null);
+    setStep2Done(false);
     setStep(1);
     setError("");
 
@@ -220,8 +249,7 @@ export default function HomePage() {
 
       // ✅ 원본 바뀌면 이전 결과는 의미 없으므로 초기화
       setLocalResult(null);
-
-      setStep(2);
+      setStep2Done(false);
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "원본 엑셀 처리 중 오류가 발생했습니다.");
     } finally {
@@ -236,7 +264,7 @@ export default function HomePage() {
 
       await downloadAggregateExcel(aggregateRows);
 
-      setStep(2);
+      setStep2Done(true);
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "집계 엑셀 생성 중 오류가 발생했습니다.");
     } finally {
@@ -258,7 +286,7 @@ export default function HomePage() {
 
       await downloadCjUploadsZip(groups);
 
-      setStep(3);
+      setStep2Done(true);
     } catch (e: unknown) {
       setError(
         getErrorMessage(e) || "CJ 업로드용 파일 생성 중 오류가 발생했습니다.",
@@ -282,7 +310,7 @@ export default function HomePage() {
 
       await downloadCjUploadsSingle(groups);
 
-      setStep(3);
+      setStep2Done(true);
     } catch (e: unknown) {
       setError(
         getErrorMessage(e) || "CJ 통합 엑셀 생성 중 오류가 발생했습니다.",
@@ -432,45 +460,65 @@ export default function HomePage() {
     }
   };
 
+  const currentMeta = STEP_META[step - 1];
+
   return (
     <div className={ui.page}>
       <main className={ui.container}>
         {/* Header */}
         <header className={ui.headerWrap}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-2">
-              <h1 className={ui.title}>한섬누리 출고 엑셀 도구</h1>
-              <p className={ui.subtitle}>
-                원본 업로드 → 품목 집계 / CJ 업로드 파일 생성 → 회신 업로드 →
-                운송장 반영
-              </p>
-            </div>
-
-            <span className={ui.badge}>
-              Step <b className="ml-1">{step}</b> / 4
-            </span>
-          </div>
+          <h1 className={ui.title}>한섬누리 출고 엑셀 도구</h1>
+          <p className={ui.subtitle}>
+            원본 업로드부터 운송장 반영까지, 한 단계씩 진행하세요
+          </p>
         </header>
 
-        {/* Stepper */}
-        <div className={ui.pillRow}>
-          {[
-            { n: 1, label: "원본 업로드" },
-            { n: 2, label: "산출물 생성" },
-            { n: 3, label: "회신 업로드" },
-            { n: 4, label: "최종 다운로드" },
-          ].map((s) => {
-            const active = step === (s.n as TStep);
-            return (
-              <div
-                key={s.n}
-                className={`${ui.pill} ${active ? ui.pillActive : ui.pillInactive}`}
-              >
-                {s.n}. {s.label}
-              </div>
-            );
-          })}
-        </div>
+        {/* Progress bar (버튼으로만 이동, 완료 단계는 되돌아가기 허용) */}
+        <nav className="space-y-3">
+          <div className="flex items-center">
+            {STEP_META.map((s, i) => {
+              const isActive = step === s.n;
+              const isDone = step > s.n;
+              const reachable = canGoTo(s.n);
+              return (
+                <div
+                  key={s.n}
+                  className="flex flex-1 items-center last:flex-none"
+                >
+                  <button
+                    type="button"
+                    disabled={!reachable || loading.on}
+                    onClick={() => reachable && setStep(s.n)}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${
+                      isActive
+                        ? "bg-slate-900 text-white shadow-md ring-4 ring-slate-900/10"
+                        : isDone
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-100 text-slate-400"
+                    } ${reachable && !isActive ? "cursor-pointer hover:scale-105" : "cursor-default"} disabled:cursor-not-allowed`}
+                    title={s.label}
+                  >
+                    {isDone ? "✓" : s.n}
+                  </button>
+                  {i < STEP_META.length - 1 && (
+                    <div className="mx-1.5 h-0.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-slate-900 transition-all duration-500"
+                        style={{ width: step > s.n ? "100%" : "0%" }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-baseline justify-between px-0.5">
+            <span className="text-sm font-semibold text-slate-900">
+              {step}. {currentMeta.label}
+            </span>
+            <span className="text-xs text-slate-400">{step} / 4</span>
+          </div>
+        </nav>
 
         {/* Error */}
         {error && <div className={ui.alertError}>{error}</div>}
@@ -487,142 +535,141 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Step 1 */}
-        <section className={ui.card}>
+        {/* Step card (한 번에 한 단계만) */}
+        <section key={step} className={`${ui.card} step-anim`}>
           <div className={ui.cardBody}>
-            <div className="flex items-start justify-between gap-3">
-              <h2 className={ui.cardTitle}>1) 원본 엑셀 업로드</h2>
-
-              <button
-                className={ui.btnDanger}
-                disabled={!job || loading.on}
-                onClick={() => {
-                  if (confirm("모든 작업을 초기화하시겠습니까?")) onReset();
-                }}
-                title={!job ? "업로드 후 리셋할 수 있어요" : ""}
-              >
-                전체 리셋
-              </button>
+            <div className="space-y-1">
+              <h2 className={ui.cardTitle}>{currentMeta.label}</h2>
+              <p className={ui.cardDesc}>{currentMeta.desc}</p>
             </div>
 
-            <div className={ui.fileWrap}>
-              <div className={ui.fileLabel}>원본 엑셀(.xlsx)</div>
-              <input
-                ref={originalInputRef}
-                type="file"
-                accept=".xlsx"
-                disabled={loading.on}
-                className={ui.fileInput}
-                onChange={(e) => onUploadOriginal(e.target.files?.[0] ?? null)}
-              />
+            {/* ===== Step 1 ===== */}
+            {step === 1 && (
+              <div className="space-y-4">
+                <div className={ui.fileWrap}>
+                  <div className={ui.fileLabel}>원본 엑셀(.xlsx)</div>
+                  <input
+                    ref={originalInputRef}
+                    type="file"
+                    accept=".xlsx"
+                    disabled={loading.on}
+                    className={ui.fileInput}
+                    onChange={(e) =>
+                      onUploadOriginal(e.target.files?.[0] ?? null)
+                    }
+                  />
 
-              {job?.originalFileName ? (
-                <div className="mt-3 text-sm text-slate-700">
-                  현재 작업 원본:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {job.originalFileName}
-                  </span>
+                  {job?.originalFileName ? (
+                    <div className="mt-3 flex items-center gap-1.5 text-sm text-slate-700">
+                      <span className="text-emerald-500">✓</span>
+                      <span className="font-semibold text-slate-900">
+                        {job.originalFileName}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-sm text-slate-400">
+                      업로드하면 다음 단계로 넘어갈 수 있어요.
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="mt-3 text-sm text-slate-500">
-                  업로드하면 다음 단계가 활성화됩니다.
-                </div>
-              )}
-            </div>
-            {job?.originalFileName && (
-              <div className="text-sm text-slate-700">
-                총 수량 :{" "}
-                <span className="font-semibold text-slate-900">
-                  {totalQuantity.toLocaleString()}
-                </span>
+
+                {job?.originalFileName && (
+                  <div className={ui.stat}>
+                    <div className={ui.statKey}>총 수량</div>
+                    <div className={ui.statVal}>
+                      {totalQuantity.toLocaleString()}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        </section>
 
-        {/* Step 2 */}
-        <section className={ui.card}>
-          <div className={ui.cardBody}>
-            <h2 className={ui.cardTitle}>2) 산출물 생성</h2>
+            {/* ===== Step 2 ===== */}
+            {step === 2 && (
+              <div className="space-y-4">
+                <div className={ui.btnRow}>
+                  <button
+                    className={ui.btnPrimary}
+                    disabled={loading.on}
+                    onClick={onDownloadAggregate}
+                  >
+                    📊 품목별 집계 엑셀 다운로드
+                  </button>
 
-            <div className={ui.btnRow}>
-              <button
-                className={ui.btnPrimary}
-                disabled={!canStep2 || loading.on}
-                onClick={onDownloadAggregate}
-                title={!canStep2 ? "원본을 먼저 업로드하세요" : ""}
-              >
-                품목별 집계 엑셀 다운로드
-              </button>
+                  <button
+                    className={ui.btnPrimary}
+                    disabled={loading.on}
+                    onClick={onDownloadCjZip}
+                  >
+                    🗂️ CJ 업로드용 품목별 ZIP 다운로드
+                  </button>
 
-              <button
-                className={ui.btnPrimary}
-                disabled={!canStep2 || loading.on}
-                onClick={onDownloadCjZip}
-                title={!canStep2 ? "원본을 먼저 업로드하세요" : ""}
-              >
-                CJ 업로드용 품목별 ZIP 다운로드
-              </button>
+                  <button
+                    className={ui.btnPrimary}
+                    disabled={loading.on}
+                    onClick={onDownloadCjSingle}
+                  >
+                    📄 CJ 업로드용 통합 엑셀 다운로드
+                  </button>
+                </div>
 
-              <button
-                className={ui.btnPrimary}
-                disabled={!canStep2 || loading.on}
-                onClick={onDownloadCjSingle}
-                title={!canStep2 ? "원본을 먼저 업로드하세요" : ""}
-              >
-                CJ 업로드용 통합 엑셀 다운로드
-              </button>
-            </div>
+                <div className={ui.divider} />
 
-            <div className={ui.divider} />
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">집계 건수</span>
+                  <span className="font-semibold text-slate-900">
+                    {aggregateRows.length}
+                  </span>
+                </div>
 
-            <div className="text-sm text-slate-700">
-              집계 건수:{" "}
-              <span className="font-semibold text-slate-900">
-                {aggregateRows.length}
-              </span>
-            </div>
+                <p className={ui.hint}>
+                  최소 1개를 다운로드하면 다음 단계로 넘어갈 수 있어요. 집계는
+                  “상품약어 → 상품명 → 품목명” 순으로 분류해 합산합니다.
+                </p>
 
-            <p className={ui.hint}>
-              * 품목별 집계는 “상품약어 → 상품명 → 품목명” 우선순위로 분류해 수량 합산합니다.
-            </p>
-          </div>
-        </section>
-
-        {/* Step 3 */}
-        <section className={ui.card}>
-          <div className={ui.cardBody}>
-            <h2 className={ui.cardTitle}>3) CJ 회신 엑셀 업로드(다중)</h2>
-
-            <div className={ui.fileWrap}>
-              <div className={ui.fileLabel}>
-                CJ 회신 엑셀(.xlsx) 여러 개 선택
+                {step2Done && (
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+                    <span>✓</span> 산출물을 받았어요. 다음으로 진행하세요.
+                  </div>
+                )}
               </div>
-              <input
-                ref={replyInputRef}
-                type="file"
-                accept=".xlsx"
-                multiple
-                disabled={!canStep3 || loading.on}
-                className={ui.fileInput}
-                onChange={(e) => onUploadReplies(e.target.files)}
-                title={!canStep3 ? "원본을 먼저 업로드하세요" : ""}
-              />
-              <p className="mt-3 text-sm text-slate-600">
-                • 같은 파일을 다시 올리면 경고 후 제외됩니다. <br />• 서로 다른
-                파일에 동일 고객주문번호가 있으면 <b>전체 업로드가 차단</b>
-                됩니다.
-              </p>
-            </div>
-          </div>
-        </section>
+            )}
 
-        {/* Step 4 */}
-        <section className={ui.card}>
-          <div className={ui.cardBody}>
-            <h2 className={ui.cardTitle}>4) 결과 확인 & 다운로드</h2>
+            {/* ===== Step 3 ===== */}
+            {step === 3 && (
+              <div className="space-y-4">
+                <div className={ui.fileWrap}>
+                  <div className={ui.fileLabel}>
+                    CJ 회신 엑셀(.xlsx) — 여러 개 선택 가능
+                  </div>
+                  <input
+                    ref={replyInputRef}
+                    type="file"
+                    accept=".xlsx"
+                    multiple
+                    disabled={loading.on}
+                    className={ui.fileInput}
+                    onChange={(e) => onUploadReplies(e.target.files)}
+                  />
+                  <p className="mt-3 text-sm text-slate-500">
+                    • 같은 파일을 다시 올리면 경고 후 제외돼요.
+                    <br />• 서로 다른 파일에 동일 고객주문번호가 있으면{" "}
+                    <b>전체 업로드가 차단</b>됩니다.
+                  </p>
+                </div>
 
-            {localResult ? (
+                {step3Done && (
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+                    <span>✓</span> 회신이 반영됐어요. 다음으로 진행하세요.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===== Step 4 ===== */}
+            {step === 4 && (
+              <div className="space-y-4">
+                {localResult ? (
               <div className={ui.statsGrid}>
                 <div className={ui.stat}>
                   <div className={ui.statKey}>총 수량</div>
@@ -660,10 +707,10 @@ export default function HomePage() {
             <div className={ui.btnRow}>
               <button
                 className={ui.btnPrimary}
-                disabled={!job || loading.on || !canStep4}
+                disabled={!job || loading.on || !step3Done}
                 onClick={onDownloadFinal}
               >
-                최종 원본 다운로드
+                ⬇️ 최종 원본 다운로드
               </button>
 
               <button
@@ -737,11 +784,57 @@ export default function HomePage() {
                 </div>
               </div>
             ) : null}
+              </div>
+            )}
+
+            <div className={ui.divider} />
+
+            {/* ===== Step navigation ===== */}
+            <div className="flex items-center gap-2">
+              {step > 1 ? (
+                <button
+                  type="button"
+                  className={ui.btnGhost}
+                  disabled={loading.on}
+                  onClick={goPrev}
+                >
+                  ← 이전
+                </button>
+              ) : (
+                <span />
+              )}
+
+              <div className="flex-1" />
+
+              {step < 4 ? (
+                <button
+                  type="button"
+                  className={ui.btnNext}
+                  disabled={!nextEnabled || loading.on}
+                  onClick={goNext}
+                  title={!nextEnabled ? "이 단계를 먼저 완료해주세요" : ""}
+                >
+                  다음 →
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={ui.btnDanger}
+                  disabled={loading.on}
+                  onClick={() => {
+                    if (confirm("모든 작업을 초기화하고 처음부터 시작할까요?"))
+                      onReset();
+                  }}
+                >
+                  처음부터 다시
+                </button>
+              )}
+            </div>
           </div>
         </section>
 
         {/* Footer hint */}
-        <footer className="pt-2 text-center text-xs text-slate-500">
+        <footer className="text-center text-xs text-slate-400">
           로컬에서만 처리되며(브라우저), 업로드한 파일은 서버로 전송되지
           않습니다.
         </footer>
