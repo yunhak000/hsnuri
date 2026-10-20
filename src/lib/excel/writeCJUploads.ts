@@ -240,3 +240,20 @@ export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgre
   const zipBlob = await zip.generateAsync({ type: "blob" });
   saveAs(zipBlob, makeDatedFileName("한섬누리_CJ제출용_품목별엑셀.zip"));
 };
+
+/**
+ * ===============================
+ * ✅ 단일 엑셀 다운로드
+ * - 품목별로 나누지 않고, 모든 그룹의 행을 하나의 시트에 합쳐서 출력
+ * - CJ 매핑 로직(buildCjGroupedRows 결과)은 그대로 재사용
+ * ===============================
+ */
+export const downloadCjUploadsSingle = async (groups: Map<string, TRow[]>) => {
+  const allRows: TRow[] = [];
+  for (const rows of groups.values()) {
+    for (const r of rows) allRows.push(r);
+  }
+
+  const buf = await makeCjWorkbookBuffer(allRows);
+  saveAs(new Blob([buf]), makeDatedFileName("한섬누리_CJ제출용_통합엑셀.xlsx"));
+};

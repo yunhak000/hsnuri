@@ -10,6 +10,7 @@ import {
 import {
   buildCjGroupedRows,
   downloadCjUploadsZip,
+  downloadCjUploadsSingle,
 } from "@/lib/excel/writeCJUploads";
 import { readCjReplyFiles } from "@/lib/excel/readCJReply";
 import {
@@ -261,6 +262,30 @@ export default function HomePage() {
     } catch (e: unknown) {
       setError(
         getErrorMessage(e) || "CJ 업로드용 파일 생성 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDownloadCjSingle = async () => {
+    if (!job) return;
+
+    try {
+      setError("");
+      setBusy(true, "CJ 업로드용 통합 엑셀 생성 중...");
+
+      const groups = buildCjGroupedRows(
+        job.originalHeaders,
+        job.originalRows as TRow[],
+      );
+
+      await downloadCjUploadsSingle(groups);
+
+      setStep(3);
+    } catch (e: unknown) {
+      setError(
+        getErrorMessage(e) || "CJ 통합 엑셀 생성 중 오류가 발생했습니다.",
       );
     } finally {
       setBusy(false);
@@ -537,6 +562,15 @@ export default function HomePage() {
                 title={!canStep2 ? "원본을 먼저 업로드하세요" : ""}
               >
                 CJ 업로드용 품목별 ZIP 다운로드
+              </button>
+
+              <button
+                className={ui.btnPrimary}
+                disabled={!canStep2 || loading.on}
+                onClick={onDownloadCjSingle}
+                title={!canStep2 ? "원본을 먼저 업로드하세요" : ""}
+              >
+                CJ 업로드용 통합 엑셀 다운로드
               </button>
             </div>
 
