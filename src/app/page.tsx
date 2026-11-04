@@ -206,18 +206,26 @@ export default function HomePage() {
    */
   const onReset = async () => {
     if (loading.on) return;
+    if (!confirm("모든 작업을 초기화하고 처음부터 시작할까요?")) return;
 
-    await clearJob();
+    try {
+      setBusy(true, "작업 초기화 중...");
+      await clearJob();
 
-    setJob(null);
-    setLocalResult(null);
-    setStep2Done(false);
-    setStep(1);
-    setError("");
+      setJob(null);
+      setLocalResult(null);
+      setStep2Done(false);
+      setStep(1);
+      setError("");
 
-    // ✅ input에 남아있는 "선택된 파일명" 제거
-    if (originalInputRef.current) originalInputRef.current.value = "";
-    if (replyInputRef.current) replyInputRef.current.value = "";
+      // ✅ input에 남아있는 "선택된 파일명" 제거
+      if (originalInputRef.current) originalInputRef.current.value = "";
+      if (replyInputRef.current) replyInputRef.current.value = "";
+    } catch (e: unknown) {
+      setError(getErrorMessage(e) || "작업 초기화 중 오류가 발생했습니다.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onUploadOriginal = async (file: File | null) => {
@@ -470,7 +478,7 @@ export default function HomePage() {
               className="absolute left-1/2 top-0 h-14 w-40 max-w-none -translate-x-1/2"
             />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-[15px] font-bold tracking-tight text-[#191f28]">
               한섬누리 출고관리
             </p>
@@ -478,6 +486,29 @@ export default function HomePage() {
               주문부터 운송장까지, 간편하게
             </p>
           </div>
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={loading.on}
+            aria-label="모든 작업 초기화하고 처음부터 다시 시작"
+            title="처음부터 다시"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-sm transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:bg-primary-muted disabled:text-primary-muted-foreground"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 10a9 9 0 1 1 2.6 8.4" />
+              <path d="M3 4v6h6" />
+            </svg>
+          </button>
         </header>
         {/* ===== 상단: 진행 게이지 ===== */}
         <div className="mb-7">
@@ -805,6 +836,23 @@ export default function HomePage() {
 
         <footer className="mt-8 space-y-2 border-t border-[#e5e8eb] pt-5 text-center text-[12px] leading-relaxed text-[#6b7684]">
           <p>한섬누리에서 운영하는 출고관리 서비스입니다.</p>
+          <nav aria-label="한섬누리 관련 사이트" className="flex flex-wrap justify-center gap-2">
+            {[
+              { label: "한섬누리 홈페이지", href: "https://hsnuri.com/default/" },
+              { label: "한섬누리 발주 사이트", href: "https://hsnuri17.adminplus.co.kr/partner-app/#/login" },
+            ].map(({ label, href }) => (
+              <a
+                key={href}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`${label} (새 탭)`}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-primary-muted bg-white px-4 py-2.5 text-[13px] font-semibold text-primary transition-colors hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
           <p>
             파일은 서버로 전송되지 않으며,
             <br />
@@ -815,41 +863,31 @@ export default function HomePage() {
 
       {/* ===== 하단 고정 CTA 바 ===== */}
       <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#f2f4f6] via-[#f2f4f6] to-transparent pt-5">
-        <div className="mx-auto flex max-w-md gap-2.5 px-5 pb-5">
-          {step > 1 && (
-            <button
-              type="button"
-              className={ui.ctaSecondary}
-              disabled={loading.on}
-              onClick={goPrev}
-            >
-              이전
-            </button>
-          )}
+        <div className="mx-auto max-w-md px-5 pb-5">
+          <div className="flex gap-2.5">
+            {step > 1 && (
+              <button
+                type="button"
+                className={ui.ctaSecondary}
+                disabled={loading.on}
+                onClick={goPrev}
+              >
+                이전
+              </button>
+            )}
 
-          {step < 4 ? (
-            <button
-              type="button"
-              className={ui.ctaPrimary}
-              disabled={!nextEnabled || loading.on}
-              onClick={goNext}
-              title={!nextEnabled ? "이 단계를 먼저 완료해주세요" : ""}
-            >
-              다음
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={ui.ctaPrimary}
-              disabled={loading.on}
-              onClick={() => {
-                if (confirm("모든 작업을 초기화하고 처음부터 시작할까요?"))
-                  onReset();
-              }}
-            >
-              처음부터 다시
-            </button>
-          )}
+            {step < 4 && (
+              <button
+                type="button"
+                className={ui.ctaPrimary}
+                disabled={!nextEnabled || loading.on}
+                onClick={goNext}
+                title={!nextEnabled ? "이 단계를 먼저 완료해주세요" : ""}
+              >
+                다음
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

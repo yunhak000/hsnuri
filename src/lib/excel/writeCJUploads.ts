@@ -209,58 +209,6 @@ const makeCjWorkbookBuffer = async (rows: TRow[]) => {
   return wb.xlsx.writeBuffer();
 };
 
-// 통합발주서는 제공받은 기타 양식의 헤더와 서식을 그대로 사용합니다.
-// 배열 순서는 템플릿 A:N이며, 그룹 생성 결과의 필드명과 연결합니다.
-const INTEGRATED_FIELDS = [
-  null,
-  "보내는분성명",
-  "보내는분전화번호",
-  "보내는분우편번호",
-  "보내는분주소",
-  "품목명",
-  "박스수량",
-  "받는분성명",
-  "받는분전화번호",
-  "받는분우편번호",
-  "받는분주소",
-  "배송메세지",
-  "상품주문번호",
-  "운송장번호",
-] as const;
-
-const makeIntegratedWorkbookBuffer = async (rows: TRow[]) => {
-  const response = await fetch("/templates/cj-integrated-order.xlsx");
-  if (!response.ok) {
-    throw new Error("통합발주서 양식을 불러오지 못했습니다. 다시 시도해주세요.");
-  }
-
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(await response.arrayBuffer());
-  const ws = wb.getWorksheet("개인");
-  if (!ws) throw new Error("통합발주서 양식의 시트를 찾을 수 없습니다.");
-
-  const sampleRow = ws.getRow(2);
-  const styles = INTEGRATED_FIELDS.map((_, index) =>
-    structuredClone(sampleRow.getCell(index + 1).style),
-  );
-  const rowHeight = sampleRow.height;
-
-  rows.forEach((source, index) => {
-    const row = ws.getRow(index + 2);
-    row.height = rowHeight;
-    INTEGRATED_FIELDS.forEach((field, colIndex) => {
-      const cell = row.getCell(colIndex + 1);
-      cell.style = structuredClone(styles[colIndex]);
-      // 기타1은 원본 값이나 검사원 문구와 무관하게 빈칸으로 유지합니다.
-      const value = field === null ? "" : toText(source[field]);
-      const quantity = field === "박스수량" ? Number(value.replace(/,/g, "")) : NaN;
-      cell.value = value !== "" && Number.isFinite(quantity) ? quantity : value;
-    });
-  });
-
-  return wb.xlsx.writeBuffer();
-};
-
 /**
  * ===============================
  * ✅ ZIP 다운로드
@@ -306,6 +254,6 @@ export const downloadCjUploadsSingle = async (groups: Map<string, TRow[]>) => {
     for (const r of rows) allRows.push(r);
   }
 
-  const buf = await makeIntegratedWorkbookBuffer(allRows);
+  const buf = await makeCjWorkbookBuffer(allRows);
   saveAs(new Blob([buf]), makeDatedFileName("한섬누리_CJ제출용_통합엑셀.xlsx"));
 };
