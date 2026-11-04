@@ -836,23 +836,6 @@ export default function HomePage() {
 
         <footer className="mt-8 space-y-2 border-t border-[#e5e8eb] pt-5 text-center text-[12px] leading-relaxed text-[#6b7684]">
           <p>한섬누리에서 운영하는 출고관리 서비스입니다.</p>
-          <nav aria-label="한섬누리 관련 사이트" className="flex flex-wrap justify-center gap-2">
-            {[
-              { label: "한섬누리 홈페이지", href: "https://hsnuri.com/default/" },
-              { label: "한섬누리 발주 사이트", href: "https://hsnuri17.adminplus.co.kr/partner-app/#/login" },
-            ].map(({ label, href }) => (
-              <a
-                key={href}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`${label} (새 탭)`}
-                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-primary-muted bg-white px-4 py-2.5 text-[13px] font-semibold text-primary transition-colors hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              >
-                {label}
-              </a>
-            ))}
-          </nav>
           <p>
             파일은 서버로 전송되지 않으며,
             <br />
