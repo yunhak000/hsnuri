@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { readExcelFile } from "@/lib/excel/read";
 import {
   buildAggregateRows,
@@ -55,7 +56,7 @@ const STEP_META: Array<{ n: TStep; label: string; desc: string }> = [
 ];
 
 /**
- * ✅ 공통 UI 클래스 — Toss 스타일 (심플 / 밝은 배경 / 블루 포인트)
+ * ✅ 공통 UI 클래스 — 한섬누리 스타일 (심플 / 밝은 배경 / 로고 초록 포인트)
  */
 const ui = {
   page: "min-h-screen bg-[#f2f4f6] text-[#191f28]",
@@ -73,22 +74,22 @@ const ui = {
   listBtn:
     "group flex w-full items-center gap-3.5 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 hover:bg-[#f9fafb] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
   listIcon:
-    "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e8f3ff] text-xl",
-  listTitle: "text-[15px] font-bold text-[#191f28]",
-  listDesc: "mt-0.5 text-[13px] text-[#8b95a1]",
+    "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-xl",
+  listTitle: "block text-[15px] font-bold text-[#191f28]",
+  listDesc: "mt-1 block text-[13px] text-[#8b95a1]",
   // 결과(step4) 보조 버튼
   btnPrimary:
-    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#3182f6] px-5 py-4 text-[16px] font-bold text-white transition-all duration-200 hover:bg-[#1b64da] active:scale-[0.98] disabled:bg-[#dbe3ed] disabled:text-[#9fb0c4] disabled:cursor-not-allowed disabled:active:scale-100",
+    "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-[16px] font-bold text-white transition-all duration-200 hover:bg-primary-hover active:scale-[0.98] disabled:bg-primary-muted disabled:text-primary-muted-foreground disabled:cursor-not-allowed disabled:active:scale-100",
   btnSecondary:
     "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#f2f4f6] px-5 py-4 text-[16px] font-bold text-[#4e5968] transition-all duration-200 hover:bg-[#e5e8eb] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
   // 하단 고정 CTA: flex-1로 두어 1개일 땐 100%, 2개일 땐 50:50
   ctaPrimary:
-    "flex flex-1 items-center justify-center rounded-2xl bg-[#3182f6] px-5 py-4 text-[17px] font-bold text-white transition-all duration-200 hover:bg-[#1b64da] active:scale-[0.98] disabled:bg-[#dbe3ed] disabled:text-[#9fb0c4] disabled:cursor-not-allowed disabled:active:scale-100",
+    "flex flex-1 items-center justify-center rounded-2xl bg-primary px-5 py-4 text-[17px] font-bold text-white transition-all duration-200 hover:bg-primary-hover active:scale-[0.98] disabled:bg-primary-muted disabled:text-primary-muted-foreground disabled:cursor-not-allowed disabled:active:scale-100",
   ctaSecondary:
     "flex flex-1 items-center justify-center rounded-2xl bg-[#f2f4f6] px-5 py-4 text-[17px] font-bold text-[#4e5968] transition-all duration-200 hover:bg-[#e5e8eb] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
   // 드롭존
   dropzone:
-    "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#d1d6db] bg-white px-5 py-9 text-center transition-colors duration-200 hover:border-[#3182f6] hover:bg-[#f7faff]",
+    "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#d1d6db] bg-white px-5 py-9 text-center transition-colors duration-200 hover:border-primary hover:bg-primary-wash",
   statsGrid: "grid grid-cols-2 gap-2.5",
   stat: "rounded-2xl bg-white p-4",
   statKey: "text-[13px] font-medium text-[#8b95a1]",
@@ -99,7 +100,7 @@ const ui = {
   th: "p-2.5 text-left font-semibold text-[#6b7684]",
   td: "border-t border-[#f2f4f6] p-2.5 text-[#4e5968]",
   successTag:
-    "pop-in flex items-center gap-1.5 text-[14px] font-semibold text-[#3182f6]",
+    "pop-in flex items-center gap-1.5 text-[14px] font-semibold text-primary",
 };
 
 export default function HomePage() {
@@ -458,6 +459,26 @@ export default function HomePage() {
   return (
     <div className={ui.page}>
       <main className={ui.container}>
+        <header className="mb-6 flex items-center gap-3 border-b border-[#e5e8eb] pb-5">
+          <div className="relative h-14 w-14 shrink-0 overflow-hidden mix-blend-multiply">
+            <Image
+              src="/logo.png"
+              alt="한섬누리"
+              width={300}
+              height={105}
+              priority
+              className="absolute left-1/2 top-0 h-14 w-40 max-w-none -translate-x-1/2"
+            />
+          </div>
+          <div>
+            <p className="text-[15px] font-bold tracking-tight text-[#191f28]">
+              한섬누리 출고관리
+            </p>
+            <p className="mt-1 text-[12px] text-[#6b7684]">
+              주문부터 운송장까지, 간편하게
+            </p>
+          </div>
+        </header>
         {/* ===== 상단: 진행 게이지 ===== */}
         <div className="mb-7">
           <div className="mb-2 flex items-center justify-between">
@@ -476,7 +497,7 @@ export default function HomePage() {
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#e5e8eb]">
             <div
-              className="h-full rounded-full bg-[#3182f6] transition-all duration-500 ease-out"
+              className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -495,7 +516,7 @@ export default function HomePage() {
         {loading.on && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#191f28]/25 backdrop-blur-[2px]">
             <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-5 shadow-xl">
-              <div className="h-5 w-5 animate-spin rounded-full border-[2.5px] border-[#e5e8eb] border-t-[#3182f6]" />
+              <div className="h-5 w-5 animate-spin rounded-full border-[2.5px] border-[#e5e8eb] border-t-primary" />
               <div className="text-[15px] font-bold text-[#191f28]">
                 {loading.text}
               </div>
@@ -509,7 +530,7 @@ export default function HomePage() {
           {step === 1 && (
             <>
               <label className={ui.dropzone}>
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e8f3ff] text-3xl">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-3xl">
                   📄
                 </div>
                 <div className="text-[15px] font-bold text-[#191f28]">
@@ -533,7 +554,7 @@ export default function HomePage() {
               {job?.originalFileName && (
                 <div className="pop-in space-y-3">
                   <div className="flex items-center gap-2.5 rounded-2xl bg-white p-4">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#3182f6] text-[13px] text-white">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[13px] text-white">
                       ✓
                     </span>
                     <span className="flex-1 truncate text-[15px] font-semibold text-[#191f28]">
@@ -602,7 +623,7 @@ export default function HomePage() {
 
               {step2Done && (
                 <div className={ui.successTag}>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3182f6] text-[11px] text-white">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] text-white">
                     ✓
                   </span>
                   산출물을 받았어요. 다음으로 진행하세요.
@@ -615,7 +636,7 @@ export default function HomePage() {
           {step === 3 && (
             <>
               <label className={ui.dropzone}>
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e8f3ff] text-3xl">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-3xl">
                   📦
                 </div>
                 <div className="text-[15px] font-bold text-[#191f28]">
@@ -645,7 +666,7 @@ export default function HomePage() {
 
               {step3Done && (
                 <div className={ui.successTag}>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3182f6] text-[11px] text-white">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] text-white">
                     ✓
                   </span>
                   회신이 반영됐어요. 다음으로 진행하세요.
@@ -671,7 +692,7 @@ export default function HomePage() {
                   </div>
                   <div className={ui.stat}>
                     <div className={ui.statKey}>매핑 성공(추정)</div>
-                    <div className={`${ui.statVal} text-[#3182f6]`}>
+                    <div className={`${ui.statVal} text-primary`}>
                       {localResult.matchedCount}
                     </div>
                   </div>
@@ -782,9 +803,13 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Footer hint */}
-        <footer className="mt-8 text-center text-[12px] text-[#b0b8c1]">
-          모든 처리는 브라우저에서만 이뤄지며, 파일은 서버로 전송되지 않아요.
+        <footer className="mt-8 space-y-2 border-t border-[#e5e8eb] pt-5 text-center text-[12px] leading-relaxed text-[#6b7684]">
+          <p>한섬누리에서 운영하는 출고관리 서비스입니다.</p>
+          <p>
+            파일은 서버로 전송되지 않으며,
+            <br />
+            모든 처리는 브라우저에서 이루어집니다.
+          </p>
         </footer>
       </main>
 
