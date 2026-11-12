@@ -91,6 +91,7 @@ const CJ_VALUE_MAP: Record<string, string[]> = {
   // ===== 품목 / 수량 =====
   품목명: ["원본엑셀상품명", ORIGINAL_ITEM_COL],
   어드민품목명: [ORIGINAL_ITEM_COL],
+  매출처: ["매출처"],
   박스수량: ["박스수량", "수량"],
 
   // ===== 주문번호 =====

@@ -109,10 +109,10 @@ test("actual final and CJ workbooks export normalized timestamps", async () => {
 test("CJ ZIP and combined workbook use original product names with item name fallback", async () => {
   const { buildCjGroupedRows, downloadCjUploadsSingle, downloadCjUploadsZip } = load("src/lib/excel/writeCJUploads.ts");
   const rows = [
-    { 상품주문번호: "1", 상품약어: "분류A", 품목명: "품목A", 원본엑셀상품명: "원본 상품A", 옵션: "옵션A" },
-    { 상품주문번호: "2", 상품약어: "분류A", 품목명: "품목B", 원본엑셀상품명: "", 상품명: "다른 상품B", 상품옵션: "옵션B" },
-    { 상품주문번호: "3", 상품약어: "분류B", 품목명: "품목C", 원본엑셀상품명: "  \n " },
-    { 상품주문번호: "4", 상품약어: "분류B", 품목명: "품목D" },
+    { 상품주문번호: "1", 상품약어: "분류A", 품목명: "품목A", 원본엑셀상품명: "원본 상품A", 옵션: "옵션A", 매출처: "거래처A" },
+    { 상품주문번호: "2", 상품약어: "분류A", 품목명: "품목B", 원본엑셀상품명: "", 상품명: "다른 상품B", 상품옵션: "옵션B", 매출처: "거래처B" },
+    { 상품주문번호: "3", 상품약어: "분류B", 품목명: "품목C", 원본엑셀상품명: "  \n ", 매출처: "거래처C" },
+    { 상품주문번호: "4", 상품약어: "분류B", 품목명: "품목D", 매출처: "" },
   ];
   const groups = buildCjGroupedRows(Object.keys(rows[0]), rows);
   downloads = [];
@@ -123,11 +123,11 @@ test("CJ ZIP and combined workbook use original product names with item name fal
   const zip = await JSZip.loadAsync(await downloads[1].blob.arrayBuffer());
   assert.deepEqual(Object.keys(zip.files), ["분류A.xlsx", "분류B.xlsx"]);
   const cases = [
-    [await downloads[0].blob.arrayBuffer(), ["원본 상품A", "품목B", "품목C", "품목D"], ["품목A", "품목B", "품목C", "품목D"]],
-    [await zip.file("분류A.xlsx").async("nodebuffer"), ["원본 상품A", "품목B"], ["품목A", "품목B"]],
-    [await zip.file("분류B.xlsx").async("nodebuffer"), ["품목C", "품목D"], ["품목C", "품목D"]],
+    [await downloads[0].blob.arrayBuffer(), ["원본 상품A", "품목B", "품목C", "품목D"], ["품목A", "품목B", "품목C", "품목D"], ["거래처A", "거래처B", "거래처C", ""]],
+    [await zip.file("분류A.xlsx").async("nodebuffer"), ["원본 상품A", "품목B"], ["품목A", "품목B"], ["거래처A", "거래처B"]],
+    [await zip.file("분류B.xlsx").async("nodebuffer"), ["품목C", "품목D"], ["품목C", "품목D"], ["거래처C", ""]],
   ];
-  for (const [buffer, expected, expectedAdminNames] of cases) {
+  for (const [buffer, expected, expectedAdminNames, expectedSalesAccounts] of cases) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
     const ws = workbook.worksheets[0];
@@ -137,5 +137,8 @@ test("CJ ZIP and combined workbook use original product names with item name fal
     assert.equal(ws.getCell("P1").value, "어드민품목명");
     const adminNames = Array.from({ length: ws.rowCount - 1 }, (_, index) => ws.getCell(`P${index + 2}`).value);
     assert.deepEqual(adminNames, expectedAdminNames);
+    assert.equal(ws.getCell("Q1").value, "매출처");
+    const salesAccounts = Array.from({ length: ws.rowCount - 1 }, (_, index) => ws.getCell(`Q${index + 2}`).value);
+    assert.deepEqual(salesAccounts, expectedSalesAccounts);
   }
 });
