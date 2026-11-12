@@ -123,16 +123,19 @@ test("CJ ZIP and combined workbook use original product names with item name fal
   const zip = await JSZip.loadAsync(await downloads[1].blob.arrayBuffer());
   assert.deepEqual(Object.keys(zip.files), ["분류A.xlsx", "분류B.xlsx"]);
   const cases = [
-    [await downloads[0].blob.arrayBuffer(), ["원본 상품A", "품목B", "품목C", "품목D"]],
-    [await zip.file("분류A.xlsx").async("nodebuffer"), ["원본 상품A", "품목B"]],
-    [await zip.file("분류B.xlsx").async("nodebuffer"), ["품목C", "품목D"]],
+    [await downloads[0].blob.arrayBuffer(), ["원본 상품A", "품목B", "품목C", "품목D"], ["품목A", "품목B", "품목C", "품목D"]],
+    [await zip.file("분류A.xlsx").async("nodebuffer"), ["원본 상품A", "품목B"], ["품목A", "품목B"]],
+    [await zip.file("분류B.xlsx").async("nodebuffer"), ["품목C", "품목D"], ["품목C", "품목D"]],
   ];
-  for (const [buffer, expected] of cases) {
+  for (const [buffer, expected, expectedAdminNames] of cases) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
     const ws = workbook.worksheets[0];
     const col = ws.getRow(1).values.indexOf("품목명");
     const actual = Array.from({ length: ws.rowCount - 1 }, (_, index) => ws.getRow(index + 2).getCell(col).value);
     assert.deepEqual(actual, expected);
+    assert.equal(ws.getCell("P1").value, "어드민품목명");
+    const adminNames = Array.from({ length: ws.rowCount - 1 }, (_, index) => ws.getCell(`P${index + 2}`).value);
+    assert.deepEqual(adminNames, expectedAdminNames);
   }
 });
