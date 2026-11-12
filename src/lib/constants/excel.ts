@@ -14,6 +14,8 @@ export const CJ_UPLOAD_HEADERS = [
   "거래처주문번호",
   "운송장번호",
   "상품주문번호",
+  "어드민품목명",
+  "매출처",
 ] as const;
 
 export type TCjUploadHeader = (typeof CJ_UPLOAD_HEADERS)[number];
