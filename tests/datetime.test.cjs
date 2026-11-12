@@ -29,6 +29,22 @@ function load(relativePath) {
 
 const { toText } = load("src/lib/utils/normalize.ts");
 const { formatKstDateTime } = load("src/lib/utils/datetime.ts");
+const { getJejuDeliverySummary } = load("src/lib/utils/jejuDelivery.ts");
+
+test("Jeju delivery warning sums boxes once per matching address", () => {
+  assert.deepEqual(getJejuDeliverySummary([
+    { 받는분주소: "제주도 제주시", 박스수량: 2 },
+    { 받는분주소: "제주특별자치도 서귀포시", 박스수량: "3" },
+    { 받는분주소: "제주도 제주특별자치도 제주시", 박스수량: 4 },
+    { "받는분 주소": "제주도 제주시", "박스 수량": " 1,000 " },
+    { 받는분주소: "서울특별시", 박스수량: 100 },
+    { 보내는분주소: "제주도", 박스수량: 100 },
+    { 받는분주소: "제주도", 박스수량: "수량 미입력", 수량: 100 },
+    { 받는분주소: "제주도", 박스수량: null },
+  ]), { hasJejuDelivery: true, totalBox: 1009 });
+  assert.deepEqual(getJejuDeliverySummary([]), { hasJejuDelivery: false, totalBox: 0 });
+  assert.deepEqual(getJejuDeliverySummary([{ 받는분주소: "부산광역시", 박스수량: 2 }]), { hasJejuDelivery: false, totalBox: 0 });
+});
 
 test("spreadsheet times stay unchanged and explicit timezones convert to Korea", () => {
   const originalTimezone = process.env.TZ;
@@ -88,4 +104,35 @@ test("actual final and CJ workbooks export normalized timestamps", async () => {
     assert.equal(ws.getRow(2).getCell(col).value, "2026-11-04 13:05:09");
   }
   for (const { name } of downloads.slice(1)) assert.match(name, /^\d{4}-\d{2}-\d{2}_/);
+});
+
+test("CJ ZIP and combined workbook use original product names with item name fallback", async () => {
+  const { buildCjGroupedRows, downloadCjUploadsSingle, downloadCjUploadsZip } = load("src/lib/excel/writeCJUploads.ts");
+  const rows = [
+    { 상품주문번호: "1", 상품약어: "분류A", 품목명: "품목A", 원본엑셀상품명: "원본 상품A", 옵션: "옵션A" },
+    { 상품주문번호: "2", 상품약어: "분류A", 품목명: "품목B", 원본엑셀상품명: "", 상품명: "다른 상품B", 상품옵션: "옵션B" },
+    { 상품주문번호: "3", 상품약어: "분류B", 품목명: "품목C", 원본엑셀상품명: "  \n " },
+    { 상품주문번호: "4", 상품약어: "분류B", 품목명: "품목D" },
+  ];
+  const groups = buildCjGroupedRows(Object.keys(rows[0]), rows);
+  downloads = [];
+  await downloadCjUploadsSingle(groups);
+  await downloadCjUploadsZip(groups);
+
+  const JSZip = require("jszip");
+  const zip = await JSZip.loadAsync(await downloads[1].blob.arrayBuffer());
+  assert.deepEqual(Object.keys(zip.files), ["분류A.xlsx", "분류B.xlsx"]);
+  const cases = [
+    [await downloads[0].blob.arrayBuffer(), ["원본 상품A", "품목B", "품목C", "품목D"]],
+    [await zip.file("분류A.xlsx").async("nodebuffer"), ["원본 상품A", "품목B"]],
+    [await zip.file("분류B.xlsx").async("nodebuffer"), ["품목C", "품목D"]],
+  ];
+  for (const [buffer, expected] of cases) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const ws = workbook.worksheets[0];
+    const col = ws.getRow(1).values.indexOf("품목명");
+    const actual = Array.from({ length: ws.rowCount - 1 }, (_, index) => ws.getRow(index + 2).getCell(col).value);
+    assert.deepEqual(actual, expected);
+  }
 });

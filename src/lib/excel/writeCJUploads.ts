@@ -89,7 +89,7 @@ const CJ_VALUE_MAP: Record<string, string[]> = {
   배송메세지: ["배송메세지", "배송메시지", "배송요청사항", "요청사항"],
 
   // ===== 품목 / 수량 =====
-  품목명: [ORIGINAL_ITEM_COL, "상품명", "품목명"],
+  품목명: ["원본엑셀상품명", ORIGINAL_ITEM_COL],
   박스수량: ["박스수량", "수량"],
 
   // ===== 주문번호 =====
@@ -150,11 +150,9 @@ export const buildCjGroupedRows = (originalHeaders: string[], originalRows: TRow
         continue;
       }
 
-      // 품목명은 옵션 붙이기
+      // 주문서의 원본엑셀상품명을 우선 사용하고, 비어 있으면 품목명 사용
       if (normalized === normalizeHeader("품목명")) {
-        const base = pick(row, CJ_VALUE_MAP["품목명"]);
-        const option = pick(row, ["옵션", "상품옵션"]);
-        out[cjHeader] = option ? `${base} / ${option}` : base;
+        out[cjHeader] = pick(row, CJ_VALUE_MAP["품목명"]);
         continue;
       }
 

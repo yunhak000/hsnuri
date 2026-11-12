@@ -23,7 +23,7 @@ const extractFruitKey = (itemName: string) => {
   return itemName.split(/\s+/)[0] ?? itemName;
 };
 
-const normalizeItemNameForAggregate = (itemName: string) => {
+export const normalizeItemNameForAggregate = (itemName: string) => {
   return itemName.replace(/(?<![\d.])5(\s*kg\b)/gi, "4.5$1").replace(/(?<![\d.])10(\s*kg\b)/gi, "9$1");
 };
 
