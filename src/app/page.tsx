@@ -5,7 +5,7 @@ import Image from "next/image";
 import { readExcelFile } from "@/lib/excel/read";
 import {
   buildAggregateRows,
-  downloadAggregateExcel,
+  normalizeItemNameForAggregate,
   type TAggregateRow,
 } from "@/lib/excel/writeAggregate";
 import {
@@ -26,6 +26,7 @@ import {
   type TFileFingerprint,
 } from "@/lib/utils/hash";
 import { normalizeHeader } from "@/lib/utils/normalize";
+import { getJejuDeliverySummary } from "@/lib/utils/jejuDelivery";
 
 // 재배포
 
@@ -50,7 +51,7 @@ const getErrorMessage = (e: unknown) => {
 
 const STEP_META: Array<{ n: TStep; label: string; desc: string }> = [
   { n: 1, label: "원본 업로드", desc: "당일 출고 원본 엑셀을 올려주세요" },
-  { n: 2, label: "산출물 생성", desc: "필요한 산출물을 최소 1개 받아주세요" },
+  { n: 2, label: "산출물 생성", desc: "품목별 집계를 확인하고 CJ 파일을 받아주세요" },
   { n: 3, label: "회신 업로드", desc: "CJ 운송장 회신 파일을 올려주세요" },
   { n: 4, label: "최종 다운로드", desc: "운송장이 반영된 결과를 받아주세요" },
 ];
@@ -105,8 +106,9 @@ const ui = {
 
 export default function HomePage() {
   const [step, setStep] = useState<TStep>(1);
-  // ✅ 2단계: 산출물을 최소 1개 다운로드했는지 (다음 단계 활성화 조건)
+  // ✅ 2단계: CJ 산출물 다운로드 완료 안내
   const [step2Done, setStep2Done] = useState<boolean>(false);
+  const [aggregateCopied, setAggregateCopied] = useState(false);
   const [loading, setLoading] = useState<{ on: boolean; text: string }>({
     on: false,
     text: "",
@@ -134,6 +136,11 @@ export default function HomePage() {
     // job.originalRows는 TJobState 타입 상 unknown row일 수 있으니 여기서만 캐스팅
     return buildAggregateRows(job.originalRows as TRow[]);
   }, [job?.originalRows]);
+
+  const jejuDelivery = useMemo(
+    () => getJejuDeliverySummary(job?.originalRows ?? []),
+    [job?.originalRows],
+  );
 
   /**
    * ✅ 총 수량 계산
@@ -195,7 +202,7 @@ export default function HomePage() {
   // 현재 단계에서 "다음" 버튼 활성화 조건
   const nextEnabled =
     (step === 1 && step1Done) ||
-    (step === 2 && step2Done) ||
+    (step === 2 && (aggregateRows.length > 0 || step2Done)) ||
     (step === 3 && step3Done);
 
   /**
@@ -215,6 +222,7 @@ export default function HomePage() {
       setJob(null);
       setLocalResult(null);
       setStep2Done(false);
+      setAggregateCopied(false);
       setStep(1);
       setError("");
 
@@ -251,6 +259,7 @@ export default function HomePage() {
       // ✅ 원본 바뀌면 이전 결과는 의미 없으므로 초기화
       setLocalResult(null);
       setStep2Done(false);
+      setAggregateCopied(false);
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "원본 엑셀 처리 중 오류가 발생했습니다.");
     } finally {
@@ -258,18 +267,22 @@ export default function HomePage() {
     }
   };
 
-  const onDownloadAggregate = async () => {
+  const onCopyAggregate = async () => {
     try {
       setError("");
-      setBusy(true, "품목별 집계 엑셀 생성 중...");
-
-      await downloadAggregateExcel(aggregateRows);
-
-      setStep2Done(true);
-    } catch (e: unknown) {
-      setError(getErrorMessage(e) || "집계 엑셀 생성 중 오류가 발생했습니다.");
-    } finally {
-      setBusy(false);
+      setAggregateCopied(false);
+      const text = [
+        ["상품분류", "총 박스수량"],
+        ...aggregateRows.map((row) => [
+          normalizeItemNameForAggregate(row.itemName).replace(/[\t\r\n]+/g, " "),
+          String(row.totalBox),
+        ]),
+        ["합계", String(aggregateRows.reduce((sum, row) => sum + row.totalBox, 0))],
+      ].map((row) => row.join("\t")).join("\n");
+      await navigator.clipboard.writeText(text);
+      setAggregateCopied(true);
+    } catch {
+      setError("복사하지 못했어요. 아래 집계 표를 직접 선택해서 복사해 주세요.");
     }
   };
 
@@ -606,20 +619,60 @@ export default function HomePage() {
           {/* Step 2 */}
           {step === 2 && (
             <>
-              <div className={ui.btnRow}>
-                <button
-                  className={ui.listBtn}
-                  disabled={loading.on}
-                  onClick={onDownloadAggregate}
-                >
-                  <span className={ui.listIcon}>📊</span>
-                  <span className="flex-1">
-                    <span className={ui.listTitle}>품목별 집계 엑셀</span>
-                    <span className={ui.listDesc}>품목별 수량을 합산한 표</span>
-                  </span>
-                  <span className="text-[#c4cad1]">›</span>
-                </button>
+              {jejuDelivery.hasJejuDelivery && (
+                <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-[15px] font-bold leading-relaxed text-amber-900">
+                  ★ 주의하세요. 제주도 배송이 &apos;{jejuDelivery.totalBox.toLocaleString("ko-KR") }건&apos; 있습니다.
+                </div>
+              )}
+              <section className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]" aria-labelledby="aggregate-title">
+                <div className="flex items-center justify-between gap-3 p-4">
+                  <div>
+                    <h2 id="aggregate-title" className={ui.listTitle}>품목별 집계</h2>
+                    <p className={ui.listDesc}>복사해서 필요한 곳에 붙여넣으세요.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-xl bg-primary-soft px-3 py-2 text-[13px] font-bold text-primary disabled:opacity-40"
+                    disabled={loading.on || aggregateRows.length === 0}
+                    onClick={onCopyAggregate}
+                  >
+                    전체 복사
+                  </button>
+                </div>
+                {aggregateRows.length > 0 ? (
+                  <div className="max-h-96 overflow-auto">
+                    <table className={`${ui.table} select-text`}>
+                      <thead className={ui.thead}>
+                        <tr>
+                          <th scope="col" className={ui.th}>상품분류</th>
+                          <th scope="col" className={`${ui.th} whitespace-nowrap text-right`}>총 박스수량</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aggregateRows.map((row) => (
+                          <tr key={row.itemName}>
+                            <td className={`${ui.td} break-words`}>{normalizeItemNameForAggregate(row.itemName)}</td>
+                            <td className={`${ui.td} text-right tabular-nums`}>{row.totalBox}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#f9fafb] font-bold">
+                          <th scope="row" className={ui.td}>합계</th>
+                          <td className={`${ui.td} text-right tabular-nums`}>{aggregateRows.reduce((sum, row) => sum + row.totalBox, 0)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="px-4 pb-4 text-[13px] text-[#8b95a1]">집계할 품목이 없습니다.</p>
+                )}
+                <p role="status" className="px-4 pb-3 text-[13px] text-primary">
+                  {aggregateCopied ? "복사했어요. 원하는 곳에 붙여넣으세요." : ""}
+                </p>
+              </section>
 
+              <div className={ui.btnRow}>
                 <button
                   className={ui.listBtn}
                   disabled={loading.on}
@@ -648,8 +701,8 @@ export default function HomePage() {
               </div>
 
               <p className={ui.hint}>
-                최소 1개를 다운로드하면 다음 단계로 넘어갈 수 있어요. 집계는
-                “상품약어 → 상품명 → 품목명” 순으로 분류해 합산합니다.
+                집계를 확인한 뒤 다음 단계로 넘어갈 수 있어요. 집계는
+                “상품약어 → 품목명 → 상품명” 순으로 분류해 합산합니다.
               </p>
 
               {step2Done && (
