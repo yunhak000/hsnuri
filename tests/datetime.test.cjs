@@ -286,6 +286,45 @@ test("single-sheet source keeps its name and highlights only populated tracking 
   }
 });
 
+test("tracking export preserves original table, filter, workbook and unrelated sheet parts byte for byte", async () => {
+  const source = new ExcelJS.Workbook();
+  for (const name of ["전체 주문", "품목별 주문"]) {
+    const sheet = source.addWorksheet(name);
+    sheet.addTable({
+      name: name === "전체 주문" ? "Orders" : "ProductOrders",
+      ref: "A1", headerRow: true,
+      columns: ["상품명", "★쇼핑몰 주문번호★", "송장번호"].map((name) => ({ name, filterButton: true })),
+      rows: [["감귤 5kg", "S1", ""], ["감귤 10kg", "S2", ""]],
+    });
+  }
+  const notes = source.addWorksheet("관련없는 시트");
+  notes.addRow(["그대로 보존", { formula: "1+1", result: 2 }]);
+  notes.mergeCells("A2:C2");
+  const sourceBuffer = await source.xlsx.writeBuffer();
+  const { readExcelFile } = load("src/lib/excel/read.ts");
+  const original = await readExcelFile(new File([sourceBuffer], "표가있는원본.xlsx"));
+  const { applyTracking, downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  const applied = applyTracking(original.headers, original.rows, new Map([["S1", ["0001", "0002"]], ["S2", ["0003"]]]));
+  downloads = [];
+  await downloadOriginalWithTracking(applied.updatedHeaders, applied.updatedRows, "표가있는원본.xlsx", original.originalWorkbookBuffer);
+  const JSZip = require("jszip");
+  const before = await JSZip.loadAsync(sourceBuffer);
+  const after = await JSZip.loadAsync(await downloads[0].blob.arrayBuffer());
+  assert.deepEqual(Object.keys(after.files).sort(), Object.keys(before.files).sort());
+  const changedParts = new Set(["xl/styles.xml", "xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"]);
+  for (const [path, part] of Object.entries(before.files)) {
+    if (part.dir || changedParts.has(path)) continue;
+    assert.equal(await after.file(path).async("string"), await part.async("string"), path);
+  }
+  const result = new ExcelJS.Workbook();
+  await result.xlsx.load(await downloads[0].blob.arrayBuffer());
+  for (const sheet of result.worksheets.slice(0, 2)) {
+    assert.equal(sheet.getCell("C2").value, "0001");
+    assert.equal(sheet.getCell("D2").value, "0002");
+    assert.notEqual(sheet.getCell("D3").fill?.fgColor?.argb, "FFFFF59D");
+  }
+});
+
 test("CJ ZIP and combined workbook use original product names with item name fallback", async () => {
   const { buildCjGroupedRows, downloadCjUploadsSingle, downloadCjUploadsZip } = load("src/lib/excel/writeCJUploads.ts");
   const rows = [

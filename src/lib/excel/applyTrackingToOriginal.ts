@@ -7,6 +7,7 @@ import {
 } from "@/lib/constants/excel";
 import { makeDatedFileName } from "@/lib/utils/filename";
 import { normalizeHeader, toText } from "@/lib/utils/normalize";
+import { patchOriginalWorkbook, type TCellPatch, type TSheetPatch } from "@/lib/excel/patchOriginalWorkbook";
 
 type TRow = Record<string, unknown>;
 
@@ -233,7 +234,9 @@ const fillTrackingInAllWorksheets = (
     ])));
   }
 
+  const patches: TSheetPatch[] = [];
   for (const worksheet of workbook.worksheets) {
+    const cells = new Map<string, TCellPatch>();
     const columns = new Map<string, number>();
     worksheet.getRow(1).eachCell((cell, column) => {
       columns.set(normalizeHeader(toText(cell.value)), column);
@@ -264,11 +267,13 @@ const fillTrackingInAllWorksheets = (
           const headerCell = worksheet.getRow(1).getCell(column);
           headerCell.value = targetHeader;
           headerCell.font = { bold: true };
+          cells.set(headerCell.address, { address: headerCell.address, value: targetHeader, highlight: false });
           worksheet.getColumn(column).width = 22;
           columns.set(targetHeader, column);
         }
         const cell = row.getCell(column);
         cell.value = value;
+        cells.set(cell.address, { address: cell.address, value, highlight: true, text: true });
         cell.style = { ...cell.style };
         cell.numFmt = "@";
       }
@@ -279,6 +284,7 @@ const fillTrackingInAllWorksheets = (
       for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
         const cell = worksheet.getRow(rowNumber).getCell(column);
         const hasTracking = rowNumber > 1 && toText(cell.value).trim() !== "";
+        cells.set(cell.address, { ...cells.get(cell.address), address: cell.address, highlight: hasTracking });
         cell.style = {
           ...cell.style,
           fill: hasTracking
@@ -287,7 +293,9 @@ const fillTrackingInAllWorksheets = (
         };
       }
     }
+    patches.push({ name: worksheet.name, cells: Array.from(cells.values()) });
   }
+  return patches;
 };
 
 export const downloadOriginalWithTracking = async (
@@ -300,8 +308,8 @@ export const downloadOriginalWithTracking = async (
   const wb = new ExcelJS.Workbook();
   if (originalWorkbookBuffer) {
     await wb.xlsx.load(originalWorkbookBuffer);
-    fillTrackingInAllWorksheets(wb, headers, rows, replyTrackingByOrder);
-    const buffer = await wb.xlsx.writeBuffer();
+    const patches = fillTrackingInAllWorksheets(wb, headers, rows, replyTrackingByOrder);
+    const buffer = await patchOriginalWorkbook(originalWorkbookBuffer, patches);
     saveAs(new Blob([buffer]), makeFinalOriginalFileName(originalFileName, headers, rows));
     return;
   }
