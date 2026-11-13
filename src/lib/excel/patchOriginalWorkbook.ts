@@ -33,17 +33,60 @@ const requirePart = async (zip: JSZip, path: string) => {
   return part.async("string");
 };
 
-const resolvePart = (target: string) => {
+const resolvePart = (target: string, directory = "xl") => {
   const parts: string[] = [];
-  for (const part of (target.startsWith("/") ? target.slice(1) : `xl/${target}`).split("/")) {
+  for (const part of (target.startsWith("/") ? target.slice(1) : `${directory}/${target}`).split("/")) {
     if (part === "..") parts.pop();
     else if (part && part !== ".") parts.push(part);
   }
   return parts.join("/");
 };
 
+const shiftReferenceUp = (reference: string) => reference.replace(
+  /(\$?[A-Z]+\$?)(\d+)/g,
+  (_, column: string, row: string) => `${column}${Math.max(1, Number(row) - 1)}`,
+);
+
+const removeHeaderRow = (document: Document) => {
+  const sheetData = document.getElementsByTagNameNS(NS, "sheetData")[0];
+  if (!sheetData) throw new Error("사방넷 첫 번째 시트의 데이터를 찾지 못했습니다.");
+  for (const row of children(sheetData, "row")) {
+    const rowNumber = Number(row.getAttribute("r"));
+    if (rowNumber === 1) {
+      sheetData.removeChild(row);
+      continue;
+    }
+    row.setAttribute("r", String(rowNumber - 1));
+    for (const cell of children(row, "c")) {
+      cell.setAttribute("r", shiftReferenceUp(cell.getAttribute("r") ?? ""));
+    }
+  }
+  // 셀은 서식을 그대로 가지고 한 행 위로 이동한다. 표시 범위와 고정 창 위치도 맞춘다.
+  for (const name of ["dimension", "mergeCell", "hyperlink", "conditionalFormatting", "dataValidation", "ignoredError", "selection", "pane", "sheetView"]) {
+    for (const element of Array.from(document.getElementsByTagNameNS(NS, name))) {
+      for (const attribute of ["ref", "sqref", "activeCell", "topLeftCell"]) {
+        if (element.hasAttribute(attribute)) element.setAttribute(attribute, shiftReferenceUp(element.getAttribute(attribute) ?? ""));
+      }
+      if (name === "pane" && element.hasAttribute("ySplit") && element.getAttribute("state")?.startsWith("frozen")) {
+        const ySplit = Math.max(0, Number(element.getAttribute("ySplit")) - 1);
+        element.setAttribute("ySplit", String(ySplit));
+        if (ySplit === 0 && Number(element.getAttribute("xSplit") ?? 0) === 0) {
+          element.parentNode?.removeChild(element);
+          for (const selection of Array.from(document.getElementsByTagNameNS(NS, "selection"))) selection.removeAttribute("pane");
+        }
+      }
+    }
+  }
+  // 첫 행의 제목을 기준으로 하던 필터는 제목 없는 결과물에 남기지 않는다.
+  for (const filter of Array.from(document.getElementsByTagNameNS(NS, "autoFilter"))) filter.parentNode?.removeChild(filter);
+};
+
 // ExcelJS로 전체 파일을 재생성하지 않고, 원본 ZIP에서 셀과 필요한 스타일만 변경한다.
-export const patchOriginalWorkbook = async (buffer: ArrayBuffer, patches: TSheetPatch[]) => {
+export const patchOriginalWorkbook = async (
+  buffer: ArrayBuffer,
+  patches: TSheetPatch[],
+  options: { removeFirstSheetHeader?: boolean } = {},
+) => {
   const zip = await JSZip.loadAsync(buffer);
   const serializer = new XMLSerializer();
   const workbook = parse(await requirePart(zip, "xl/workbook.xml"));
@@ -167,5 +210,39 @@ export const patchOriginalWorkbook = async (buffer: ArrayBuffer, patches: TSheet
     zip.file(path, serializer.serializeToString(document));
   }
   if (styleIds.size > 0) zip.file("xl/styles.xml", serializer.serializeToString(styles));
+  if (options.removeFirstSheetHeader) {
+    const firstSheet = workbook.getElementsByTagNameNS(NS, "sheet")[0];
+    const path = firstSheet && sheetParts.get(firstSheet.getAttribute("name"));
+    if (!path) throw new Error("사방넷 첫 번째 시트를 찾지 못했습니다.");
+    const document = parse(await requirePart(zip, path));
+    removeHeaderRow(document);
+    zip.file(path, serializer.serializeToString(document));
+
+    // 첫 시트에 연결된 표가 있다면 제목 없는 표로 조정하고 다른 시트의 표는 보존한다.
+    const directory = path.slice(0, path.lastIndexOf("/"));
+    const fileName = path.slice(path.lastIndexOf("/") + 1);
+    const relationPart = zip.file(`${directory}/_rels/${fileName}.rels`);
+    if (relationPart) {
+      const relations = parse(await relationPart.async("string"));
+      for (const relation of Array.from(relations.getElementsByTagName("Relationship"))) {
+        if (!relation.getAttribute("Type")?.endsWith("/table")) continue;
+        const tablePath = resolvePart(relation.getAttribute("Target") ?? "", directory);
+        const tableDocument = parse(await requirePart(zip, tablePath));
+        const table = tableDocument.documentElement;
+        if (!table) continue;
+        const originalRef = table.getAttribute("ref") ?? "";
+        const removedTableHeader = Number(originalRef.split(":")[0].match(/\d+$/)?.[0]) === 1;
+        table.setAttribute("ref", shiftReferenceUp(originalRef));
+        if (removedTableHeader) table.setAttribute("headerRowCount", "0");
+        for (const name of ["autoFilter", "sortState"]) {
+          for (const element of Array.from(table.getElementsByTagNameNS(NS, name))) {
+            if (removedTableHeader) element.parentNode?.removeChild(element);
+            else if (element.hasAttribute("ref")) element.setAttribute("ref", shiftReferenceUp(element.getAttribute("ref") ?? ""));
+          }
+        }
+        zip.file(tablePath, serializer.serializeToString(tableDocument));
+      }
+    }
+  }
   return zip.generateAsync({ type: "arraybuffer" });
 };

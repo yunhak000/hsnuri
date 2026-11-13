@@ -8,6 +8,7 @@ import {
 import { makeDatedFileName } from "@/lib/utils/filename";
 import { normalizeHeader, toText } from "@/lib/utils/normalize";
 import { patchOriginalWorkbook, type TCellPatch, type TSheetPatch } from "@/lib/excel/patchOriginalWorkbook";
+import { isSabangnetHeaders } from "@/lib/excel/orderFormat";
 
 type TRow = Record<string, unknown>;
 
@@ -317,7 +318,11 @@ export const downloadOriginalWithTracking = async (
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(originalWorkbookBuffer);
   const patches = fillTrackingInAllWorksheets(workbook, headers, rows, replyTrackingByOrder);
-  const buffer = await patchOriginalWorkbook(originalWorkbookBuffer, patches);
+  const firstHeaders: string[] = [];
+  workbook.worksheets[0]?.getRow(1).eachCell((cell) => firstHeaders.push(toText(cell.value)));
+  const buffer = await patchOriginalWorkbook(originalWorkbookBuffer, patches, {
+    removeFirstSheetHeader: isSabangnetHeaders(firstHeaders),
+  });
   saveAs(new Blob([buffer]), makeFinalOriginalFileName(originalFileName, headers, rows));
 };
 

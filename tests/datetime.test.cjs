@@ -428,6 +428,64 @@ test("duplicate tracking numbers in a CJ reply do not create extra tracking colu
   assert.deepEqual(applied.updatedHeaders, ["상품주문번호", "운송장번호", "운송장번호(2)"]);
 });
 
+test("only Sabangnet final export removes the first worksheet header after filling tracking", async () => {
+  const { isSabangnetHeaders } = load("src/lib/excel/orderFormat.ts");
+  assert.equal(isSabangnetHeaders(["사방넷주문번호", "쇼핑몰명", "상품약어", "★쇼핑몰 주문번호★"]), true);
+  assert.equal(isSabangnetHeaders(["품목명", "상품주문번호", "운송장번호"]), false);
+  const source = new ExcelJS.Workbook();
+  const all = source.addWorksheet("전체 주문 원본 이름");
+  const headers = ["사방넷 주문번호", "쇼핑몰명", "상품약어", "상품명", "★쇼핑몰 주문번호★", "송장번호"];
+  all.addTable({
+    name: "AllOrders", ref: "A1", headerRow: true,
+    columns: headers.map((name) => ({ name, filterButton: true })),
+    rows: [["S1", "카카오톡선물하기", "타이벡_5kg", "감귤 5kg", "A", ""], ["S2", "스마트스토어", "타이벡_5kg", "감귤 5kg", "B", ""]],
+  });
+  all.getCell("C2").font = { bold: true, color: { argb: "FF123456" } };
+  all.views = [{ state: "frozen", ySplit: 1 }];
+  const detail = source.addWorksheet("타이벡");
+  detail.addRow(headers);
+  detail.addRow(["S1", "카카오톡선물하기", "타이벡_5kg", "감귤 5kg", "A", ""]);
+  const unrelated = source.addWorksheet("기타 메모");
+  unrelated.addRow(["그대로 유지"]);
+  const originalBytes = await source.xlsx.writeBuffer();
+  const { readExcelFile } = load("src/lib/excel/read.ts");
+  const original = await readExcelFile(new File([originalBytes], "파일명으로판별하지않음.xlsx"));
+  assert.deepEqual(original.headers, headers);
+  assert.equal(original.rows.length, 2);
+  const { downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  downloads = [];
+  await downloadOriginalWithTracking(original.headers, original.rows, "사방넷.xlsx", original.originalWorkbookBuffer, { A: ["0001", "0002"], B: ["0003"] });
+  const outputBytes = await downloads[0].blob.arrayBuffer();
+  const final = new ExcelJS.Workbook();
+  await final.xlsx.load(outputBytes);
+  assert.deepEqual(final.worksheets.map((sheet) => sheet.name), ["전체 주문 원본 이름", "타이벡", "기타 메모"]);
+  const first = final.worksheets[0];
+  assert.equal(first.rowCount, 2);
+  assert.equal(first.getCell("A1").value, "S1");
+  assert.equal(first.getCell("C1").font.color.argb, "FF123456");
+  assert.equal(first.getCell("F1").value, "0001");
+  assert.equal(first.getCell("G1").value, "0002");
+  assert.equal(first.getCell("F2").value, "0003");
+  assert.equal(first.getCell("F1").fill.fgColor.argb, "FFFFF59D");
+  assert.equal(final.worksheets[1].getCell("F1").value, "송장번호");
+  assert.equal(final.worksheets[1].getCell("F2").value, "0001");
+  assert.equal(final.worksheets[1].getCell("G1").value, "송장번호(2)");
+  assert.equal(original.rows.length, 2);
+  assert.deepEqual(original.headers, headers);
+  const JSZip = require("jszip");
+  const before = await JSZip.loadAsync(originalBytes);
+  const after = await JSZip.loadAsync(outputBytes);
+  assert.equal(await after.file("xl/worksheets/sheet3.xml").async("string"), await before.file("xl/worksheets/sheet3.xml").async("string"));
+  assert.equal(await after.file("xl/workbook.xml").async("string"), await before.file("xl/workbook.xml").async("string"));
+  const { DOMParser } = require("@xmldom/xmldom");
+  const table = new DOMParser().parseFromString(await after.file("xl/tables/table1.xml").async("string"), "application/xml");
+  assert.equal(table.documentElement.getAttribute("headerRowCount"), "0");
+  assert.equal(table.documentElement.getAttribute("ref"), "A1:F2");
+  assert.equal(table.getElementsByTagName("autoFilter").length, 0);
+  const firstXml = new DOMParser().parseFromString(await after.file("xl/worksheets/sheet1.xml").async("string"), "application/xml");
+  assert.equal(firstXml.getElementsByTagName("pane").length, 0);
+});
+
 test("CJ ZIP and combined workbook use original product names with item name fallback", async () => {
   const { buildCjGroupedRows, downloadCjUploadsSingle, downloadCjUploadsZip } = load("src/lib/excel/writeCJUploads.ts");
   const rows = [
