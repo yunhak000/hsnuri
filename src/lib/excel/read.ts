@@ -79,6 +79,6 @@ export const readExcelFile = async (file: File): Promise<TReadExcelResult> => {
   return {
     headers,
     rows,
-    originalWorkbookBuffer: workbook.worksheets.length > 1 ? buffer : undefined,
+    originalWorkbookBuffer: buffer,
   };
 };

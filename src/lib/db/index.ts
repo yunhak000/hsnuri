@@ -22,6 +22,7 @@ export type TJobState = {
   originalRows: TOriginalRow[];
   originalHeaders: string[];
   originalWorkbookBuffer?: ArrayBuffer;
+  replyTrackingByOrder?: Record<string, string[]>;
 
   // “품목명 단순 집계” 결과를 캐시(선택)
   aggregateRows?: TAggregateRowCache[];

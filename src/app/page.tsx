@@ -411,6 +411,10 @@ export default function HomePage() {
         ...job,
         originalHeaders: updatedHeaders,
         originalRows: updatedRows,
+        replyTrackingByOrder: {
+          ...job.replyTrackingByOrder,
+          ...Object.fromEntries(map),
+        },
         uploadedReplyFiles: [...existing, ...newFingerprints],
       };
 
@@ -450,6 +454,7 @@ export default function HomePage() {
         job.originalRows as TRow[],
         job.originalFileName,
         job.originalWorkbookBuffer,
+        job.replyTrackingByOrder,
       );
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "최종 엑셀 생성 중 오류가 발생했습니다.");

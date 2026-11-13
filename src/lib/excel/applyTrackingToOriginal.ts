@@ -214,14 +214,23 @@ const fillTrackingInAllWorksheets = (
   workbook: ExcelJS.Workbook,
   headers: string[],
   rows: TRow[],
+  replyTrackingByOrder: Record<string, string[]> = {},
 ) => {
   const primaryHeader = getHeader(headers, ORIGINAL_KEY_COL);
   const fallbackHeader = getHeader(headers, ORIGINAL_FALLBACK_KEY_COL);
   const trackingHeaders = headers.filter(isTrackingCol);
-  const rowsByKey = new Map<string, TRow>();
+  const trackingByKey = new Map<string, Map<string, string>>();
   for (const row of rows) {
     const key = getOriginalOrderKey(row, primaryHeader, fallbackHeader);
-    if (key) rowsByKey.set(key, row);
+    if (key) trackingByKey.set(key, new Map(trackingHeaders.map((header) => [
+      normalizeHeader(header).replace(/^(운송장번호|송장번호)/, ""), toText(row[header]).trim(),
+    ])));
+  }
+  // 집계용 시트에는 없고 다른 시트에만 있는 주문도 회신 번호로 반영한다.
+  for (const [key, trackingList] of Object.entries(replyTrackingByOrder)) {
+    trackingByKey.set(key, new Map(trackingList.map((value, index) => [
+      index === 0 ? "" : `(${index + 1})`, value.trim(),
+    ])));
   }
 
   for (const worksheet of workbook.worksheets) {
@@ -243,13 +252,12 @@ const fillTrackingInAllWorksheets = (
       if (rowNumber === 1) return;
       const key = (primaryCol ? toText(row.getCell(primaryCol).value).trim() : "")
         || (fallbackCol ? toText(row.getCell(fallbackCol).value).trim() : "");
-      const source = rowsByKey.get(key);
+      const source = trackingByKey.get(key);
       if (!source) return;
 
-      for (const header of trackingHeaders) {
-        const value = toText(source[header]).trim();
+      for (const [suffix, value] of source) {
         if (!value) continue;
-        const targetHeader = normalizeHeader(header).replace(/^(운송장번호|송장번호)/, trackingBase);
+        const targetHeader = `${trackingBase}${suffix}`;
         let column = columns.get(targetHeader);
         if (!column) {
           column = worksheet.columnCount + 1;
@@ -261,10 +269,24 @@ const fillTrackingInAllWorksheets = (
         }
         const cell = row.getCell(column);
         cell.value = value;
+        cell.style = { ...cell.style };
         cell.numFmt = "@";
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF59D" } };
       }
     });
+
+    for (const [header, column] of columns) {
+      if (!isTrackingCol(header)) continue;
+      for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const cell = worksheet.getRow(rowNumber).getCell(column);
+        const hasTracking = rowNumber > 1 && toText(cell.value).trim() !== "";
+        cell.style = {
+          ...cell.style,
+          fill: hasTracking
+            ? { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF59D" } }
+            : { type: "pattern", pattern: "none" },
+        };
+      }
+    }
   }
 };
 
@@ -273,11 +295,12 @@ export const downloadOriginalWithTracking = async (
   rows: TRow[],
   originalFileName: string,
   originalWorkbookBuffer?: ArrayBuffer,
+  replyTrackingByOrder?: Record<string, string[]>,
 ) => {
   const wb = new ExcelJS.Workbook();
   if (originalWorkbookBuffer) {
     await wb.xlsx.load(originalWorkbookBuffer);
-    fillTrackingInAllWorksheets(wb, headers, rows);
+    fillTrackingInAllWorksheets(wb, headers, rows, replyTrackingByOrder);
     const buffer = await wb.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), makeFinalOriginalFileName(originalFileName, headers, rows));
     return;
@@ -325,7 +348,7 @@ export const downloadOriginalWithTracking = async (
   }
 
   // =========================================================
-  // ✅ 2) 운송장/송장 컬럼만 노란 배경 강조 (+ 테두리 유지)
+  // ✅ 2) 운송장 값이 있는 데이터 셀만 노란 배경 강조
   // =========================================================
   const isTrackingHeader = (header: string) => {
     const normalized = normalizeHeader(header);
@@ -345,9 +368,9 @@ export const downloadOriginalWithTracking = async (
     if (!isTrackingHeader(header)) return;
 
     const colNumber = colIdx + 1;
-    for (let r = 1; r <= lastRow; r += 1) {
+    for (let r = 2; r <= lastRow; r += 1) {
       const cell = ws.getRow(r).getCell(colNumber);
-      cell.fill = yellowFill;
+      if (toText(cell.value).trim()) cell.fill = yellowFill;
       // 테두리도 다시 한번 명시(혹시 fill 때문에 덮일까봐)
       cell.border = blackBorder;
     }

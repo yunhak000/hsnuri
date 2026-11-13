@@ -197,6 +197,10 @@ test("final export fills matching orders across all original sheets without dupl
   all.addRow(["타이벡_4.5KG", "타이벡 4.5kg", 1, "S2", ""]);
   all.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF00FF00" } };
   all.getColumn(1).width = 35;
+  all.getCell("F1").value = "송장번호(2)";
+  for (const address of ["F1", "F2", "F3"]) {
+    all.getCell(address).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF59D" } };
+  }
   const small = source.addWorksheet("타이벡 1.5KG");
   small.addRow(headers);
   small.addRow(["타이벡_1.5KG", "타이벡 1.5kg", 2, "S1", ""]);
@@ -205,9 +209,13 @@ test("final export fills matching orders across all original sheets without dupl
   const large = source.addWorksheet("타이벡 4.5KG");
   large.addRow(["운송장번호", "★쇼핑몰 주문번호★", "상품명"]);
   large.addRow(["", "S2", "타이벡 4.5kg"]);
+  large.addRow(["", "ONLY_ON_DETAIL", "품목 시트에만 있는 주문"]);
   const notes = source.addWorksheet("안내");
   notes.addRow(["메모", "보존할 내용"]);
   notes.getCell("A2").value = { formula: "1+1", result: 2 };
+  notes.state = "hidden";
+  notes.mergeCells("B2:C2");
+  notes.getCell("B2").value = "합쳐진 안내문";
 
   const { readExcelFile } = load("src/lib/excel/read.ts");
   const original = await readExcelFile(new File([await source.xlsx.writeBuffer()], "사방넷.xlsx"));
@@ -224,7 +232,9 @@ test("final export fills matching orders across all original sheets without dupl
   // The buffer also survives the structured clone used when persisting job state.
   const buffer = structuredClone(original.originalWorkbookBuffer);
   downloads = [];
-  await downloadOriginalWithTracking(applied.updatedHeaders, applied.updatedRows, "사방넷.xlsx", buffer);
+  await downloadOriginalWithTracking(applied.updatedHeaders, applied.updatedRows, "사방넷.xlsx", buffer, {
+    S1: ["000111", "000112"], S2: ["000222"], ONLY_ON_DETAIL: ["000333"],
+  });
   const final = new ExcelJS.Workbook();
   await final.xlsx.load(await downloads[0].blob.arrayBuffer());
   assert.deepEqual(final.worksheets.map((sheet) => sheet.name), ["전체 주문", "타이벡 1.5KG", "타이벡 4.5KG", "안내"]);
@@ -233,16 +243,47 @@ test("final export fills matching orders across all original sheets without dupl
     assert.equal(sheet.getCell("E2").value, "000111");
     assert.equal(sheet.getCell("F1").value, "송장번호(2)");
     assert.equal(sheet.getCell("F2").value, "000112");
+    assert.equal(sheet.getCell("F2").fill.fgColor.argb, "FFFFF59D");
+    assert.notEqual(sheet.getCell("F1").fill?.fgColor?.argb, "FFFFF59D");
+    assert.notEqual(sheet.getCell("F3").fill?.fgColor?.argb, "FFFFF59D");
   }
   assert.equal(final.getWorksheet("전체 주문").getCell("E3").value, "000222");
   assert.equal(final.getWorksheet("타이벡 4.5KG").getCell("A2").value, "000222");
+  assert.equal(final.getWorksheet("타이벡 4.5KG").getCell("A3").value, "000333");
   assert.equal(final.getWorksheet("타이벡 1.5KG").getCell("E3").value, "기존 송장");
   assert.equal(final.getWorksheet("타이벡 1.5KG").getCell("E4").value, "000111");
   assert.equal(final.getWorksheet("전체 주문").getColumn(1).width, 35);
   assert.equal(final.getWorksheet("전체 주문").getCell("A1").fill.fgColor.argb, "FF00FF00");
   assert.deepEqual(final.getWorksheet("안내").getCell("A2").value, { formula: "1+1", result: 2 });
   assert.equal(final.getWorksheet("안내").getCell("B1").value, "보존할 내용");
+  assert.equal(final.getWorksheet("안내").state, "hidden");
+  assert.equal(final.getWorksheet("안내").getCell("C2").master.address, "B2");
   assert.match(downloads[0].name, /_3건\.xlsx$/);
+});
+
+test("single-sheet source keeps its name and highlights only populated tracking cells", async () => {
+  const source = new ExcelJS.Workbook();
+  const sheet = source.addWorksheet("기존 주문서 이름");
+  sheet.addRow(["상품주문번호", "품목명", "운송장번호", "운송장번호(2)"]);
+  sheet.addRow(["A", "감귤 5kg", "", ""]);
+  sheet.addRow(["B", "감귤 10kg", "", ""]);
+  const { readExcelFile } = load("src/lib/excel/read.ts");
+  const original = await readExcelFile(new File([await source.xlsx.writeBuffer()], "원본.xlsx"));
+  assert.ok(original.originalWorkbookBuffer instanceof ArrayBuffer);
+  const { applyTracking, downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  const applied = applyTracking(original.headers, original.rows, new Map([["A", ["001", "002"]], ["B", ["003"]]]));
+  for (const buffer of [original.originalWorkbookBuffer, undefined]) {
+    downloads = [];
+    await downloadOriginalWithTracking(applied.updatedHeaders, applied.updatedRows, "원본.xlsx", buffer);
+    const final = new ExcelJS.Workbook();
+    await final.xlsx.load(await downloads[0].blob.arrayBuffer());
+    const ws = final.worksheets[0];
+    if (buffer) assert.equal(ws.name, "기존 주문서 이름");
+    assert.equal(ws.getCell("D2").value, "002");
+    assert.equal(ws.getCell("D2").fill.fgColor.argb, "FFFFF59D");
+    assert.notEqual(ws.getCell("D3").fill?.fgColor?.argb, "FFFFF59D");
+    assert.notEqual(ws.getCell("D1").fill?.fgColor?.argb, "FFFFF59D");
+  }
 });
 
 test("CJ ZIP and combined workbook use original product names with item name fallback", async () => {
