@@ -68,6 +68,17 @@ test("Jeju delivery warning sums boxes once per matching address", () => {
   assert.deepEqual(getJejuDeliverySummary([{ 받는분주소: "부산광역시", 박스수량: 2 }]), { hasJejuDelivery: false, totalBox: 0 });
 });
 
+test("Jeju delivery uses Sabangnet quantity and preserves box quantity priority", () => {
+  assert.deepEqual(getJejuDeliverySummary([
+    { 받는분주소: "제주도 제주시", 수량: "2" },
+    { 받는분주소: "제주특별자치도 서귀포시", 수량: "3" },
+    { 받는분주소: "제주도", 박스수량: 4, 수량: 20 },
+    { 받는분주소: "제주도", 박스수량: 0, 수량: 20 },
+    { 받는분주소: "제주도", 박스수량: " ", 수량: 1 },
+    { 받는분주소: "서울특별시", 수량: 100 },
+  ]), { hasJejuDelivery: true, totalBox: 10 });
+});
+
 test("spreadsheet times stay unchanged and explicit timezones convert to Korea", () => {
   const originalTimezone = process.env.TZ;
   try {
@@ -126,6 +137,34 @@ test("actual final and CJ workbooks export normalized timestamps", async () => {
     assert.equal(ws.getRow(2).getCell(col).value, "2026-11-04 13:05:09");
   }
   for (const { name } of downloads.slice(1)) assert.match(name, /^\d{4}-\d{2}-\d{2}_/);
+});
+
+test("Sabangnet ZIP and combined exports map product, admin product and sales channel", async () => {
+  const { buildCjGroupedRows, downloadCjUploadsSingle, downloadCjUploadsZip } = load("src/lib/excel/writeCJUploads.ts");
+  const rows = [
+    { "★쇼핑몰 주문번호★": "S1", "사방넷 주문번호": "A1", 상품약어: "타이벡_5kg", 상품명: "고당도 타이벡 감귤 5KG", 쇼핑몰명: "카카오톡선물하기", 수량: 2, 옵션: "옵션 추가 금지" },
+    { "★쇼핑몰 주문번호★": "S2", "사방넷 주문번호": "A2", 상품약어: "황금향_2kg", 상품명: "제주 황금향 2KG", 쇼핑몰명: "스마트스토어", 수량: 1 },
+  ];
+  const groups = buildCjGroupedRows(Object.keys(rows[0]), rows);
+  downloads = [];
+  await downloadCjUploadsSingle(groups);
+  await downloadCjUploadsZip(groups);
+  const zip = await require("jszip").loadAsync(await downloads[1].blob.arrayBuffer());
+  const cases = [[await downloads[0].blob.arrayBuffer(), rows]];
+  for (const row of rows) cases.push([await zip.file(`${row.상품약어}.xlsx`).async("nodebuffer"), [row]]);
+  for (const [buffer, expected] of cases) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const ws = workbook.worksheets[0];
+    expected.forEach((row, index) => {
+      const number = index + 2;
+      assert.equal(ws.getCell(`F${number}`).value, row.상품명);
+      assert.equal(ws.getCell(`P${number}`).value, row.상품약어);
+      assert.equal(ws.getCell(`Q${number}`).value, `사방넷-(${row.쇼핑몰명})`);
+      assert.equal(ws.getCell(`G${number}`).value, String(row.수량));
+      assert.equal(ws.getCell(`O${number}`).value, row["★쇼핑몰 주문번호★"]);
+    });
+  }
 });
 
 test("CJ ZIP and combined workbook use original product names with item name fallback", async () => {

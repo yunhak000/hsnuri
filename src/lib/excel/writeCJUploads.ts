@@ -89,8 +89,8 @@ const CJ_VALUE_MAP: Record<string, string[]> = {
   배송메세지: ["배송메세지", "배송메시지", "배송요청사항", "요청사항"],
 
   // ===== 품목 / 수량 =====
-  품목명: ["원본엑셀상품명", ORIGINAL_ITEM_COL],
-  어드민품목명: [ORIGINAL_ITEM_COL],
+  품목명: ["원본엑셀상품명", ORIGINAL_ITEM_COL, "상품명"],
+  어드민품목명: [ORIGINAL_ITEM_COL, "상품약어"],
   매출처: ["매출처"],
   박스수량: ["박스수량", "수량"],
 
@@ -152,7 +152,7 @@ export const buildCjGroupedRows = (originalHeaders: string[], originalRows: TRow
         continue;
       }
 
-      // 주문서의 원본엑셀상품명을 우선 사용하고, 비어 있으면 품목명 사용
+      // 기존 주문서는 원본엑셀상품명 → 품목명, 사방넷 양식은 상품명 사용
       if (normalized === normalizeHeader("품목명")) {
         out[cjHeader] = pick(row, CJ_VALUE_MAP["품목명"]);
         continue;
@@ -160,6 +160,11 @@ export const buildCjGroupedRows = (originalHeaders: string[], originalRows: TRow
 
       const candidates = CJ_VALUE_MAP[cjHeader] ?? [cjHeader];
       let value = pick(row, candidates);
+
+      if (normalized === normalizeHeader("매출처") && !value) {
+        const mallName = pick(row, ["쇼핑몰명"]);
+        if (mallName) value = `사방넷-(${mallName})`;
+      }
 
       // ===== 보내는분 기본값 처리 =====
       if (!value) {

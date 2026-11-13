@@ -11,7 +11,10 @@ export const getJejuDeliverySummary = (rows: Record<string, unknown>[]) => {
 
     hasJejuDelivery = true;
     const quantityKey = Object.keys(row).find((key) => normalizeHeader(key) === "박스수량");
-    const quantity = Number(toText(quantityKey ? row[quantityKey] : undefined).trim().replace(/,/g, ""));
+    const fallbackQuantityKey = Object.keys(row).find((key) => normalizeHeader(key) === "수량");
+    const boxText = toText(quantityKey ? row[quantityKey] : undefined).trim();
+    const quantityText = boxText || toText(fallbackQuantityKey ? row[fallbackQuantityKey] : undefined).trim();
+    const quantity = Number(quantityText.replace(/,/g, ""));
     if (Number.isFinite(quantity)) totalBox += quantity;
   }
 
