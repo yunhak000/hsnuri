@@ -5,7 +5,6 @@ import Image from "next/image";
 import { readExcelFile } from "@/lib/excel/read";
 import {
   buildAggregateRows,
-  normalizeItemNameForAggregate,
   type TAggregateRow,
 } from "@/lib/excel/writeAggregate";
 import {
@@ -274,7 +273,7 @@ export default function HomePage() {
       const text = [
         ["상품분류", "총 박스수량"],
         ...aggregateRows.map((row) => [
-          normalizeItemNameForAggregate(row.itemName).replace(/[\t\r\n]+/g, " "),
+          row.itemName.replace(/[\t\r\n]+/g, " "),
           String(row.totalBox),
         ]),
         ["합계", String(aggregateRows.reduce((sum, row) => sum + row.totalBox, 0))],
@@ -651,7 +650,7 @@ export default function HomePage() {
                       <tbody>
                         {aggregateRows.map((row) => (
                           <tr key={row.itemName}>
-                            <td className={`${ui.td} break-words`}>{normalizeItemNameForAggregate(row.itemName)}</td>
+                            <td className={`${ui.td} break-words`}>{row.itemName}</td>
                             <td className={`${ui.td} text-right tabular-nums`}>{row.totalBox}</td>
                           </tr>
                         ))}

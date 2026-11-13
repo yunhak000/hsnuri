@@ -29,10 +29,6 @@ const extractCultivationKey = (itemName: string) => {
   return "";
 };
 
-export const normalizeItemNameForAggregate = (itemName: string) => {
-  return itemName.replace(/(?<![\d.])5(\s*kg\b)/gi, "4.5$1").replace(/(?<![\d.])10(\s*kg\b)/gi, "9$1");
-};
-
 /**
  * row에서 후보 키를 normalize 기반으로 찾아 값 뽑기
  */
@@ -63,20 +59,13 @@ export const buildAggregateRows = (originalRows: TRow[]): TAggregateRow[] => {
     map.set(itemName, (map.get(itemName) ?? 0) + (Number.isFinite(qty) ? qty : 0));
   }
 
-  const normalizeKgForAggregate = (kg: number | null): number | null => {
-    if (kg === null) return null;
-    if (kg === 5) return 4.5;
-    if (kg === 10) return 9;
-    return kg;
-  };
-
   const result: TAggregateRow[] = Array.from(map.entries()).map(([itemName, totalBox]) => {
     const rawKg = extractKg(itemName);
 
     return {
       itemName,
       totalBox,
-      kg: normalizeKgForAggregate(rawKg),
+      kg: rawKg,
       fruitKey: extractFruitKey(itemName),
     };
   });
@@ -115,7 +104,7 @@ export const downloadAggregateExcel = async (aggregateRows: TAggregateRow[]) => 
 
   aggregateRows.forEach((row) => {
     worksheet.addRow({
-      itemName: normalizeItemNameForAggregate(row.itemName),
+      itemName: row.itemName,
       totalBox: row.totalBox,
     });
   });

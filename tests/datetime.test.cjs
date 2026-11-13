@@ -32,7 +32,7 @@ const { formatKstDateTime } = load("src/lib/utils/datetime.ts");
 const { getJejuDeliverySummary } = load("src/lib/utils/jejuDelivery.ts");
 
 test("aggregate groups Tyvek first and sorts each cultivation group by weight", () => {
-  const { buildAggregateRows, normalizeItemNameForAggregate } = load("src/lib/excel/writeAggregate.ts");
+  const { buildAggregateRows } = load("src/lib/excel/writeAggregate.ts");
   const names = [
     "제주도 서귀포 노지감귤 로얄과(2S~M) 2.5kg",
     "제주도 서귀포 타이벡 감귤 로얄과 (2S~M) 2.5kg",
@@ -46,11 +46,32 @@ test("aggregate groups Tyvek first and sorts each cultivation group by weight", 
   assert.deepEqual(result.map((row) => row.itemName), [names[1], names[0], names[2], names[3], names[4]]);
   assert.deepEqual(result.map((row) => row.totalBox), [5, 4, 1, 7, 2]);
   assert.equal(result.reduce((sum, row) => sum + row.totalBox, 0), 19);
-  assert.deepEqual(result.map((row) => normalizeItemNameForAggregate(row.itemName)), [names[1], names[0], names[2].replace("5kg", "4.5kg"), names[3].replace("5kg", "4.5kg"), names[4].replace("10kg", "9kg")]);
+  assert.deepEqual(result.map((row) => row.kg), [2.5, 2.5, 5, 5, 10]);
 
   const extraTyvek = "제주도 서귀포 타이벡 감귤 로얄과 10kg";
   const expanded = buildAggregateRows([{ 품목명: extraTyvek, 박스수량: 3 }, ...rows]);
   assert.deepEqual(expanded.slice(0, 2).map((row) => row.itemName), [names[1], extraTyvek]);
+});
+
+test("aggregate preserves source weights for original and Sabangnet orders and Excel export", async () => {
+  const { buildAggregateRows, downloadAggregateExcel } = load("src/lib/excel/writeAggregate.ts");
+  const weights = [10, 5, 9, 4.5];
+  for (const source of ["original", "sabangnet"]) {
+    const rows = weights.map((kg) => source === "original"
+      ? { 품목명: `노지감귤 ${kg}kg`, 박스수량: 2 }
+      : { 상품약어: `노지감귤 ${kg}kg`, 상품명: "판매 상품명", 수량: 2 });
+    const result = buildAggregateRows(rows);
+    assert.deepEqual(result.map((row) => row.kg), [4.5, 5, 9, 10]);
+    const expectedNames = ["노지감귤 4.5kg", "노지감귤 5kg", "노지감귤 9kg", "노지감귤 10kg"];
+    assert.deepEqual(result.map((row) => row.itemName), expectedNames);
+    assert.equal(result.reduce((sum, row) => sum + row.totalBox, 0), 8);
+    downloads = [];
+    await downloadAggregateExcel(result);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await downloads[0].blob.arrayBuffer());
+    const sheet = workbook.worksheets[0];
+    assert.deepEqual(expectedNames.map((_, index) => sheet.getCell(`A${index + 2}`).value), expectedNames);
+  }
 });
 
 test("Jeju delivery warning sums boxes once per matching address", () => {
