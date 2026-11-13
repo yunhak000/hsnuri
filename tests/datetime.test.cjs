@@ -31,6 +31,28 @@ const { toText } = load("src/lib/utils/normalize.ts");
 const { formatKstDateTime } = load("src/lib/utils/datetime.ts");
 const { getJejuDeliverySummary } = load("src/lib/utils/jejuDelivery.ts");
 
+test("aggregate groups Tyvek first and sorts each cultivation group by weight", () => {
+  const { buildAggregateRows, normalizeItemNameForAggregate } = load("src/lib/excel/writeAggregate.ts");
+  const names = [
+    "제주도 서귀포 노지감귤 로얄과(2S~M) 2.5kg",
+    "제주도 서귀포 타이벡 감귤 로얄과 (2S~M) 2.5kg",
+    "제주도 서귀포 노지감귤 꼬마과(3S) 5kg",
+    "제주도 서귀포 노지감귤 로얄과(2S~M) 5kg",
+    "제주도 서귀포 노지감귤 로얄과(2S~M) 10kg",
+  ];
+  const quantities = [4, 5, 1, 7, 2];
+  const rows = names.map((품목명, index) => ({ 품목명, 박스수량: quantities[index] }));
+  const result = buildAggregateRows(rows);
+  assert.deepEqual(result.map((row) => row.itemName), [names[1], names[0], names[2], names[3], names[4]]);
+  assert.deepEqual(result.map((row) => row.totalBox), [5, 4, 1, 7, 2]);
+  assert.equal(result.reduce((sum, row) => sum + row.totalBox, 0), 19);
+  assert.deepEqual(result.map((row) => normalizeItemNameForAggregate(row.itemName)), [names[1], names[0], names[2].replace("5kg", "4.5kg"), names[3].replace("5kg", "4.5kg"), names[4].replace("10kg", "9kg")]);
+
+  const extraTyvek = "제주도 서귀포 타이벡 감귤 로얄과 10kg";
+  const expanded = buildAggregateRows([{ 품목명: extraTyvek, 박스수량: 3 }, ...rows]);
+  assert.deepEqual(expanded.slice(0, 2).map((row) => row.itemName), [names[1], extraTyvek]);
+});
+
 test("Jeju delivery warning sums boxes once per matching address", () => {
   assert.deepEqual(getJejuDeliverySummary([
     { 받는분주소: "제주도 제주시", 박스수량: 2 },

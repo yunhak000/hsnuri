@@ -23,6 +23,12 @@ const extractFruitKey = (itemName: string) => {
   return itemName.split(/\s+/)[0] ?? itemName;
 };
 
+const extractCultivationKey = (itemName: string) => {
+  if (itemName.includes("타이벡")) return "타이벡";
+  if (itemName.includes("노지")) return "노지";
+  return "";
+};
+
 export const normalizeItemNameForAggregate = (itemName: string) => {
   return itemName.replace(/(?<![\d.])5(\s*kg\b)/gi, "4.5$1").replace(/(?<![\d.])10(\s*kg\b)/gi, "9$1");
 };
@@ -75,10 +81,18 @@ export const buildAggregateRows = (originalRows: TRow[]): TAggregateRow[] => {
     };
   });
 
-  // 품목(과일키) → kg 오름차순 → 품목명
+  // 타이벡 최우선 → 과일 종류 → 재배 유형별 묶음 → kg 오름차순 → 품목명
   result.sort((a, b) => {
+    const aCultivation = extractCultivationKey(a.itemName);
+    const bCultivation = extractCultivationKey(b.itemName);
+    const tyvekPriority = Number(bCultivation === "타이벡") - Number(aCultivation === "타이벡");
+    if (tyvekPriority !== 0) return tyvekPriority;
+
     const fk = a.fruitKey.localeCompare(b.fruitKey, "ko");
     if (fk !== 0) return fk;
+
+    const cultivation = aCultivation.localeCompare(bCultivation, "ko");
+    if (cultivation !== 0) return cultivation;
 
     const ak = a.kg ?? Number.POSITIVE_INFINITY;
     const bk = b.kg ?? Number.POSITIVE_INFINITY;
