@@ -11,6 +11,7 @@ export type TExcelRow = Record<string, unknown>;
 export type TReadExcelResult = {
   headers: string[];
   rows: TExcelRow[];
+  originalWorkbookBuffer?: ArrayBuffer;
 };
 
 const readHeaders = (worksheet: ExcelJS.Worksheet) => {
@@ -75,5 +76,9 @@ export const readExcelFile = async (file: File): Promise<TReadExcelResult> => {
     rows.push(rowData);
   });
 
-  return { headers, rows };
+  return {
+    headers,
+    rows,
+    originalWorkbookBuffer: workbook.worksheets.length > 1 ? buffer : undefined,
+  };
 };

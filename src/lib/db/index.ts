@@ -21,6 +21,7 @@ export type TJobState = {
   // 원본 전체 row를 저장 (새로고침 대비)
   originalRows: TOriginalRow[];
   originalHeaders: string[];
+  originalWorkbookBuffer?: ArrayBuffer;
 
   // “품목명 단순 집계” 결과를 캐시(선택)
   aggregateRows?: TAggregateRowCache[];

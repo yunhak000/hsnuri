@@ -242,13 +242,14 @@ export default function HomePage() {
       setError("");
       setBusy(true, "원본 엑셀 읽는 중...");
 
-      const { headers, rows } = await readExcelFile(file);
+      const { headers, rows, originalWorkbookBuffer } = await readExcelFile(file);
 
       const next: TJobState = {
         createdAt: new Date().toISOString(),
         originalFileName: file.name,
         originalHeaders: headers,
         originalRows: rows,
+        originalWorkbookBuffer,
         uploadedReplyFiles: [],
       };
 
@@ -448,6 +449,7 @@ export default function HomePage() {
         job.originalHeaders,
         job.originalRows as TRow[],
         job.originalFileName,
+        job.originalWorkbookBuffer,
       );
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "최종 엑셀 생성 중 오류가 발생했습니다.");

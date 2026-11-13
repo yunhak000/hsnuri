@@ -210,12 +210,78 @@ const makeFinalOriginalFileName = (
   return `${base}_운송장번호_반영완료_${count}건.xlsx`;
 };
 
+const fillTrackingInAllWorksheets = (
+  workbook: ExcelJS.Workbook,
+  headers: string[],
+  rows: TRow[],
+) => {
+  const primaryHeader = getHeader(headers, ORIGINAL_KEY_COL);
+  const fallbackHeader = getHeader(headers, ORIGINAL_FALLBACK_KEY_COL);
+  const trackingHeaders = headers.filter(isTrackingCol);
+  const rowsByKey = new Map<string, TRow>();
+  for (const row of rows) {
+    const key = getOriginalOrderKey(row, primaryHeader, fallbackHeader);
+    if (key) rowsByKey.set(key, row);
+  }
+
+  for (const worksheet of workbook.worksheets) {
+    const columns = new Map<string, number>();
+    worksheet.getRow(1).eachCell((cell, column) => {
+      columns.set(normalizeHeader(toText(cell.value)), column);
+    });
+    const primaryCol = columns.get(normalizeHeader(ORIGINAL_KEY_COL));
+    const fallbackCol = columns.get(normalizeHeader(ORIGINAL_FALLBACK_KEY_COL));
+    if (!primaryCol && !fallbackCol) continue;
+
+    const trackingBase = columns.has(normalizeHeader(ALT_TRACKING_COL))
+      ? ALT_TRACKING_COL
+      : columns.has(normalizeHeader(ORIGINAL_TRACKING_COL))
+        ? ORIGINAL_TRACKING_COL
+        : hasHeader(headers, ALT_TRACKING_COL) ? ALT_TRACKING_COL : ORIGINAL_TRACKING_COL;
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const key = (primaryCol ? toText(row.getCell(primaryCol).value).trim() : "")
+        || (fallbackCol ? toText(row.getCell(fallbackCol).value).trim() : "");
+      const source = rowsByKey.get(key);
+      if (!source) return;
+
+      for (const header of trackingHeaders) {
+        const value = toText(source[header]).trim();
+        if (!value) continue;
+        const targetHeader = normalizeHeader(header).replace(/^(운송장번호|송장번호)/, trackingBase);
+        let column = columns.get(targetHeader);
+        if (!column) {
+          column = worksheet.columnCount + 1;
+          const headerCell = worksheet.getRow(1).getCell(column);
+          headerCell.value = targetHeader;
+          headerCell.font = { bold: true };
+          worksheet.getColumn(column).width = 22;
+          columns.set(targetHeader, column);
+        }
+        const cell = row.getCell(column);
+        cell.value = value;
+        cell.numFmt = "@";
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF59D" } };
+      }
+    });
+  }
+};
+
 export const downloadOriginalWithTracking = async (
   headers: string[],
   rows: TRow[],
   originalFileName: string,
+  originalWorkbookBuffer?: ArrayBuffer,
 ) => {
   const wb = new ExcelJS.Workbook();
+  if (originalWorkbookBuffer) {
+    await wb.xlsx.load(originalWorkbookBuffer);
+    fillTrackingInAllWorksheets(wb, headers, rows);
+    const buffer = await wb.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), makeFinalOriginalFileName(originalFileName, headers, rows));
+    return;
+  }
   const ws = wb.addWorksheet("Sheet1");
 
   // ✅ 컬럼 정의
