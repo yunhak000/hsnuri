@@ -53,6 +53,9 @@ export const applyTracking = (
   originalRows: TRow[],
   replyMap: Map<string, string[]>, // 고객주문번호 -> 운송장번호[]
 ): TApplyResult => {
+  replyMap = new Map(Array.from(replyMap, ([key, values]) => [
+    key, Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))),
+  ]));
   const keyHeader = getHeader(originalHeaders, ORIGINAL_KEY_COL);
   const fallbackKeyHeader = getHeader(
     originalHeaders,
@@ -137,12 +140,19 @@ export const applyTracking = (
 
     for (const idx of idxs) {
       // 1번째는 base 컬럼
-      updated[idx][trackingHeader] = trackingList[0] ?? "";
+      const setTracking = (header: string, value: string) => {
+        const existing = toText(updated[idx][header]).trim();
+        if (existing && value && existing !== value) {
+          throw new Error("원본 운송장 값과 회신이 다릅니다. 기존 값은 변경하지 않았습니다.");
+        }
+        if (!existing && value) updated[idx][header] = value;
+      };
+      setTracking(trackingHeader, trackingList[0] ?? "");
 
       // 2번째부터는 확장 컬럼
       for (let n = 2; n <= trackingList.length; n += 1) {
         const h = trackingNthHeader(trackingHeader, n);
-        updated[idx][h] = trackingList[n - 1] ?? "";
+        setTracking(h, trackingList[n - 1] ?? "");
       }
 
       // 나머지 확장 컬럼 빈값 보장
@@ -220,36 +230,39 @@ const fillTrackingInAllWorksheets = (
   const primaryHeader = getHeader(headers, ORIGINAL_KEY_COL);
   const fallbackHeader = getHeader(headers, ORIGINAL_FALLBACK_KEY_COL);
   const trackingHeaders = headers.filter(isTrackingCol);
-  const trackingByKey = new Map<string, Map<string, string>>();
+  const trackingByKey = new Map<string, string[]>();
+  const uniqueTracking = (values: string[]) => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
   for (const row of rows) {
     const key = getOriginalOrderKey(row, primaryHeader, fallbackHeader);
-    if (key) trackingByKey.set(key, new Map(trackingHeaders.map((header) => [
-      normalizeHeader(header).replace(/^(운송장번호|송장번호)/, ""), toText(row[header]).trim(),
-    ])));
+    if (key) trackingByKey.set(key, uniqueTracking(trackingHeaders.map((header) => toText(row[header]))));
   }
-  // 집계용 시트에는 없고 다른 시트에만 있는 주문도 회신 번호로 반영한다.
-  for (const [key, trackingList] of Object.entries(replyTrackingByOrder)) {
-    trackingByKey.set(key, new Map(trackingList.map((value, index) => [
-      index === 0 ? "" : `(${index + 1})`, value.trim(),
-    ])));
+  for (const [key, values] of Object.entries(replyTrackingByOrder)) {
+    trackingByKey.set(key, uniqueTracking(values));
   }
 
   const patches: TSheetPatch[] = [];
   for (const worksheet of workbook.worksheets) {
     const cells = new Map<string, TCellPatch>();
     const columns = new Map<string, number>();
+    let lastHeaderColumn = 0;
     worksheet.getRow(1).eachCell((cell, column) => {
-      columns.set(normalizeHeader(toText(cell.value)), column);
+      const header = normalizeHeader(toText(cell.value));
+      if (!header) return;
+      columns.set(header, column);
+      lastHeaderColumn = Math.max(lastHeaderColumn, column);
     });
     const primaryCol = columns.get(normalizeHeader(ORIGINAL_KEY_COL));
     const fallbackCol = columns.get(normalizeHeader(ORIGINAL_FALLBACK_KEY_COL));
-    if (!primaryCol && !fallbackCol) continue;
+    const trackingBase = columns.has(normalizeHeader(ALT_TRACKING_COL)) ? ALT_TRACKING_COL : ORIGINAL_TRACKING_COL;
+    const baseColumn = columns.get(normalizeHeader(trackingBase));
+    if ((!primaryCol && !fallbackCol) || !baseColumn) continue;
 
-    const trackingBase = columns.has(normalizeHeader(ALT_TRACKING_COL))
-      ? ALT_TRACKING_COL
-      : columns.has(normalizeHeader(ORIGINAL_TRACKING_COL))
-        ? ORIGINAL_TRACKING_COL
-        : hasHeader(headers, ALT_TRACKING_COL) ? ALT_TRACKING_COL : ORIGINAL_TRACKING_COL;
+    // 서식만 남은 빈 열은 무시하고, 실제 제목 바로 다음 열부터 추가한다.
+    let nextColumn = lastHeaderColumn + 1;
+    const occupiedColumns = new Set<number>();
+    worksheet.eachRow((row) => row.eachCell((cell, column) => {
+      if (cell.value !== null && cell.value !== undefined && cell.value !== "") occupiedColumns.add(column);
+    }));
 
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
@@ -258,42 +271,35 @@ const fillTrackingInAllWorksheets = (
       const source = trackingByKey.get(key);
       if (!source) return;
 
-      for (const [suffix, value] of source) {
-        if (!value) continue;
-        const targetHeader = `${trackingBase}${suffix}`;
-        let column = columns.get(targetHeader);
+      source.forEach((value, index) => {
+        const targetHeader = index === 0 ? trackingBase : trackingNthHeader(trackingBase, index + 1);
+        let column = columns.get(normalizeHeader(targetHeader));
         if (!column) {
-          column = worksheet.columnCount + 1;
-          const headerCell = worksheet.getRow(1).getCell(column);
-          headerCell.value = targetHeader;
-          headerCell.font = { bold: true };
-          cells.set(headerCell.address, { address: headerCell.address, value: targetHeader, highlight: false });
-          worksheet.getColumn(column).width = 22;
-          columns.set(targetHeader, column);
+          while (occupiedColumns.has(nextColumn)) nextColumn += 1;
+          column = nextColumn++;
+          occupiedColumns.add(column);
+          columns.set(normalizeHeader(targetHeader), column);
+          const headerAddress = worksheet.getRow(1).getCell(column).address;
+          cells.set(headerAddress, {
+            address: headerAddress, value: targetHeader,
+            styleFrom: worksheet.getRow(1).getCell(baseColumn).address,
+          });
         }
         const cell = row.getCell(column);
-        cell.value = value;
-        cells.set(cell.address, { address: cell.address, value, highlight: true, text: true });
-        cell.style = { ...cell.style };
-        cell.numFmt = "@";
-      }
+        const current = toText(cell.value).trim();
+        const hasFormula = typeof cell.value === "object" && cell.value !== null
+          && ("formula" in cell.value || "sharedFormula" in cell.value);
+        if (hasFormula || (current && current !== value)) {
+          throw new Error(`원본 운송장 값과 회신이 다릅니다. 기존 값은 변경하지 않았습니다. (${worksheet.name}, ${cell.address})`);
+        }
+        if (current === value) return;
+        cells.set(cell.address, {
+          address: cell.address, value, highlight: true,
+          styleFrom: column === baseColumn ? undefined : row.getCell(baseColumn).address,
+        });
+      });
     });
-
-    for (const [header, column] of columns) {
-      if (!isTrackingCol(header)) continue;
-      for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-        const cell = worksheet.getRow(rowNumber).getCell(column);
-        const hasTracking = rowNumber > 1 && toText(cell.value).trim() !== "";
-        cells.set(cell.address, { ...cells.get(cell.address), address: cell.address, highlight: hasTracking });
-        cell.style = {
-          ...cell.style,
-          fill: hasTracking
-            ? { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF59D" } }
-            : { type: "pattern", pattern: "none" },
-        };
-      }
-    }
-    patches.push({ name: worksheet.name, cells: Array.from(cells.values()) });
+    if (cells.size > 0) patches.push({ name: worksheet.name, cells: Array.from(cells.values()) });
   }
   return patches;
 };
@@ -305,90 +311,14 @@ export const downloadOriginalWithTracking = async (
   originalWorkbookBuffer?: ArrayBuffer,
   replyTrackingByOrder?: Record<string, string[]>,
 ) => {
-  const wb = new ExcelJS.Workbook();
-  if (originalWorkbookBuffer) {
-    await wb.xlsx.load(originalWorkbookBuffer);
-    const patches = fillTrackingInAllWorksheets(wb, headers, rows, replyTrackingByOrder);
-    const buffer = await patchOriginalWorkbook(originalWorkbookBuffer, patches);
-    saveAs(new Blob([buffer]), makeFinalOriginalFileName(originalFileName, headers, rows));
-    return;
+  if (!originalWorkbookBuffer) {
+    throw new Error("원본 파일이 저장되어 있지 않습니다. 원본 서식을 보존하려면 1단계에서 파일을 다시 업로드해 주세요.");
   }
-  const ws = wb.addWorksheet("Sheet1");
-
-  // ✅ 컬럼 정의
-  ws.columns = headers.map((h) => ({
-    header: h,
-    key: h,
-    width: h.length > 10 ? 22 : 16,
-  }));
-
-  // ✅ 데이터 입력
-  for (const r of rows) {
-    const rowData: Record<string, unknown> = {};
-    for (const h of headers) rowData[h] = toText(r[h]);
-    ws.addRow(rowData);
-  }
-
-  // ✅ 헤더 bold
-  ws.getRow(1).font = { bold: true };
-
-  // =========================================================
-  // ✅ 1) "전체 표"에 검정 테두리 적용
-  // =========================================================
-  const lastRow = ws.rowCount; // 실제 row 수 (헤더 포함)
-  const lastCol = headers.length;
-
-  // ✅ 수정
-  const blackBorder: Partial<ExcelJS.Borders> = {
-    top: { style: "thin", color: { argb: "FF000000" } },
-    left: { style: "thin", color: { argb: "FF000000" } },
-    bottom: { style: "thin", color: { argb: "FF000000" } },
-    right: { style: "thin", color: { argb: "FF000000" } },
-  };
-
-  for (let r = 1; r <= lastRow; r += 1) {
-    for (let c = 1; c <= lastCol; c += 1) {
-      const cell = ws.getRow(r).getCell(c);
-      cell.border = blackBorder;
-      // 보기 좋게 세로 가운데 정렬(선택)
-      cell.alignment = { vertical: "middle" };
-    }
-  }
-
-  // =========================================================
-  // ✅ 2) 운송장 값이 있는 데이터 셀만 노란 배경 강조
-  // =========================================================
-  const isTrackingHeader = (header: string) => {
-    const normalized = normalizeHeader(header);
-    return (
-      normalized.startsWith(normalizeHeader("운송장번호")) ||
-      normalized.startsWith(normalizeHeader("송장번호"))
-    );
-  };
-
-  const yellowFill: ExcelJS.Fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFFFF59D" }, // 연한 노랑
-  };
-
-  headers.forEach((header, colIdx) => {
-    if (!isTrackingHeader(header)) return;
-
-    const colNumber = colIdx + 1;
-    for (let r = 2; r <= lastRow; r += 1) {
-      const cell = ws.getRow(r).getCell(colNumber);
-      if (toText(cell.value).trim()) cell.fill = yellowFill;
-      // 테두리도 다시 한번 명시(혹시 fill 때문에 덮일까봐)
-      cell.border = blackBorder;
-    }
-  });
-
-  // ✅ 필터 기능 제거(요청사항 유지)
-
-  const buf = await wb.xlsx.writeBuffer();
-  const outName = makeFinalOriginalFileName(originalFileName, headers, rows);
-  saveAs(new Blob([buf]), outName);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(originalWorkbookBuffer);
+  const patches = fillTrackingInAllWorksheets(workbook, headers, rows, replyTrackingByOrder);
+  const buffer = await patchOriginalWorkbook(originalWorkbookBuffer, patches);
+  saveAs(new Blob([buffer]), makeFinalOriginalFileName(originalFileName, headers, rows));
 };
 
 export const downloadUnmatchedExcel = async (

@@ -127,7 +127,7 @@ test("spreadsheet times stay unchanged and explicit timezones convert to Korea",
   }
 });
 
-test("actual final and CJ workbooks export normalized timestamps", async () => {
+test("final workbook preserves original timestamps while CJ exports normalized timestamps", async () => {
   const source = new ExcelJS.Workbook();
   const sheet = source.addWorksheet("원본");
   sheet.addRow(["주문일시", "회신일시"]);
@@ -138,11 +138,11 @@ test("actual final and CJ workbooks export normalized timestamps", async () => {
   const { downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
   const { downloadCjUploadsSingle, downloadCjUploadsZip } = load("src/lib/excel/writeCJUploads.ts");
   downloads = [];
-  await downloadOriginalWithTracking(original.headers, original.rows, "원본.xlsx");
+  await downloadOriginalWithTracking(original.headers, original.rows, "원본.xlsx", original.originalWorkbookBuffer);
   const final = new ExcelJS.Workbook();
   await final.xlsx.load(await downloads[0].blob.arrayBuffer());
-  assert.equal(final.worksheets[0].getCell("A2").value, "2026-11-04 13:05:09");
-  assert.equal(final.worksheets[0].getCell("B2").value, "2026-11-04 13:05:09");
+  assert.equal(final.worksheets[0].getCell("A2").value.toISOString(), "2026-11-04T13:05:09.000Z");
+  assert.equal(final.worksheets[0].getCell("B2").value, "Wed Nov 04 2026 13:05:09 GMT+0900 (Korean Standard Time)");
 
   const groups = new Map([["테스트", [{ 품목명: original.rows[0]["주문일시"] }]]]);
   await downloadCjUploadsSingle(groups);
@@ -244,8 +244,12 @@ test("final export fills matching orders across all original sheets without dupl
     assert.equal(sheet.getCell("F1").value, "송장번호(2)");
     assert.equal(sheet.getCell("F2").value, "000112");
     assert.equal(sheet.getCell("F2").fill.fgColor.argb, "FFFFF59D");
-    assert.notEqual(sheet.getCell("F1").fill?.fgColor?.argb, "FFFFF59D");
-    assert.notEqual(sheet.getCell("F3").fill?.fgColor?.argb, "FFFFF59D");
+    if (name === "전체 주문") {
+      assert.equal(sheet.getCell("F1").fill?.fgColor?.argb, "FFFFF59D");
+      assert.equal(sheet.getCell("F3").fill?.fgColor?.argb, "FFFFF59D");
+    } else {
+      assert.notEqual(sheet.getCell("F3").fill?.fgColor?.argb, "FFFFF59D");
+    }
   }
   assert.equal(final.getWorksheet("전체 주문").getCell("E3").value, "000222");
   assert.equal(final.getWorksheet("타이벡 4.5KG").getCell("A2").value, "000222");
@@ -272,7 +276,7 @@ test("single-sheet source keeps its name and highlights only populated tracking 
   assert.ok(original.originalWorkbookBuffer instanceof ArrayBuffer);
   const { applyTracking, downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
   const applied = applyTracking(original.headers, original.rows, new Map([["A", ["001", "002"]], ["B", ["003"]]]));
-  for (const buffer of [original.originalWorkbookBuffer, undefined]) {
+  for (const buffer of [original.originalWorkbookBuffer]) {
     downloads = [];
     await downloadOriginalWithTracking(applied.updatedHeaders, applied.updatedRows, "원본.xlsx", buffer);
     const final = new ExcelJS.Workbook();
@@ -284,6 +288,7 @@ test("single-sheet source keeps its name and highlights only populated tracking 
     assert.notEqual(ws.getCell("D3").fill?.fgColor?.argb, "FFFFF59D");
     assert.notEqual(ws.getCell("D1").fill?.fgColor?.argb, "FFFFF59D");
   }
+  await assert.rejects(() => downloadOriginalWithTracking(applied.updatedHeaders, applied.updatedRows, "원본.xlsx"), /1단계/);
 });
 
 test("tracking export preserves original table, filter, workbook and unrelated sheet parts byte for byte", async () => {
@@ -323,6 +328,104 @@ test("tracking export preserves original table, filter, workbook and unrelated s
     assert.equal(sheet.getCell("D2").value, "0002");
     assert.notEqual(sheet.getCell("D3").fill?.fgColor?.argb, "FFFFF59D");
   }
+});
+
+test("original headers and untouched cells remain identical and extra tracking starts at Z", async () => {
+  const source = new ExcelJS.Workbook();
+  const headers = Array.from({ length: 25 }, (_, index) => `원본열${index + 1}`);
+  headers[18] = "★쇼핑몰 주문번호★";
+  headers[19] = "송장번호";
+  for (const name of ["전체 주문", "타1.5_146"]) {
+    const sheet = source.addWorksheet(name);
+    sheet.addRow(headers);
+    for (const [number, key] of [[2, "A"], [3, "B"], [4, "NO_REPLY"], [5, "EXISTING"]]) {
+      sheet.getCell(`S${number}`).value = key;
+      sheet.getCell(`Y${number}`).value = "원본내용";
+    }
+    sheet.getCell("T1").font = { color: { argb: "FFFFFFFF" }, bold: true };
+    sheet.getCell("T1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF993300" } };
+    sheet.getCell("T2").border = { bottom: { style: "thin" } };
+    sheet.getCell("T4").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF00FF00" } };
+    sheet.getCell("T5").value = "0005";
+    sheet.getCell("T5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF112233" } };
+    sheet.getColumn("T").width = 7.25;
+    // Style-only cells used to make the append position drift to AA or later.
+    sheet.getCell("Z1").fill = { type: "pattern", pattern: "none" };
+    sheet.getCell("AA2").fill = { type: "pattern", pattern: "none" };
+  }
+  source.addWorksheet("수정없는 시트").addRow(["그대로 보존"]);
+  const originalBytes = await source.xlsx.writeBuffer();
+  const { readExcelFile } = load("src/lib/excel/read.ts");
+  const original = await readExcelFile(new File([originalBytes], "원본.xlsx"));
+  const { downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  downloads = [];
+  await downloadOriginalWithTracking(original.headers, original.rows, "원본.xlsx", original.originalWorkbookBuffer, {
+    A: ["0001", "0001", "0002"], B: ["0003"], EXISTING: ["0005"],
+  });
+  const outputBytes = await downloads[0].blob.arrayBuffer();
+  const result = new ExcelJS.Workbook();
+  await result.xlsx.load(outputBytes);
+  for (const sheet of result.worksheets.slice(0, 2)) {
+    assert.equal(sheet.getCell("T1").value, "송장번호");
+    assert.equal(sheet.getCell("T1").fill.fgColor.argb, "FF993300");
+    assert.equal(sheet.getCell("T1").font.color.argb, "FFFFFFFF");
+    assert.equal(sheet.getCell("Z1").value, "송장번호(2)");
+    assert.equal(sheet.getCell("Z1").fill.fgColor.argb, "FF993300");
+    assert.equal(sheet.getCell("Z2").value, "0002");
+    assert.equal(sheet.getCell("Z2").border.bottom.style, "thin");
+    assert.equal(sheet.getCell("AA1").value, null);
+    assert.equal(sheet.getCell("Z3").value, null);
+    assert.notEqual(sheet.getCell("Z3").fill?.fgColor?.argb, "FFFFF59D");
+    assert.equal(sheet.getCell("T4").fill.fgColor.argb, "FF00FF00");
+    assert.equal(sheet.getCell("T5").fill.fgColor.argb, "FF112233");
+    assert.equal(sheet.getColumn("T").width, 7.25);
+  }
+  const JSZip = require("jszip");
+  const before = await JSZip.loadAsync(originalBytes);
+  const after = await JSZip.loadAsync(outputBytes);
+  const { DOMParser, XMLSerializer } = require("@xmldom/xmldom");
+  const xml = new XMLSerializer();
+  for (const path of ["xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"]) {
+    const readCells = async (zip) => new Map(Array.from(new DOMParser().parseFromString(await zip.file(path).async("string"), "application/xml").getElementsByTagName("c"))
+      .map((cell) => [cell.getAttribute("r"), xml.serializeToString(cell)]));
+    const originalCells = await readCells(before);
+    const outputCells = await readCells(after);
+    for (const [address, content] of originalCells) {
+      if (["T2", "T3", "Z1", "Z2"].includes(address)) continue;
+      assert.equal(outputCells.get(address), content, `${path}:${address}`);
+    }
+  }
+  assert.equal(await after.file("xl/worksheets/sheet3.xml").async("string"), await before.file("xl/worksheets/sheet3.xml").async("string"));
+});
+
+test("conflicting original tracking is preserved and export is blocked", async () => {
+  const source = new ExcelJS.Workbook();
+  const sheet = source.addWorksheet("기존 주문");
+  sheet.addRow(["품목명", "상품주문번호", "운송장번호"]);
+  sheet.addRow(["감귤", "A", "기존번호"]);
+  const { readExcelFile } = load("src/lib/excel/read.ts");
+  const original = await readExcelFile(new File([await source.xlsx.writeBuffer()], "원본.xlsx"));
+  const { applyTracking, downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  assert.throws(() => applyTracking(original.headers, original.rows, new Map([["A", ["새번호"]]])), /기존 값은 변경하지 않았습니다/);
+  downloads = [];
+  await assert.rejects(() => downloadOriginalWithTracking(original.headers, original.rows, "원본.xlsx", original.originalWorkbookBuffer, { A: ["새번호"] }), /기존 값은 변경하지 않았습니다/);
+  assert.equal(downloads.length, 0);
+  assert.equal(original.rows[0].운송장번호, "기존번호");
+});
+
+test("duplicate tracking numbers in a CJ reply do not create extra tracking columns", async () => {
+  const source = new ExcelJS.Workbook();
+  const sheet = source.addWorksheet("회신");
+  sheet.addRow(["고객주문번호", "운송장번호"]);
+  sheet.addRow(["A", "0001"]);
+  sheet.addRow(["A", "0001"]);
+  sheet.addRow(["A", "0002"]);
+  const { readCjReplyFiles } = load("src/lib/excel/readCJReply.ts");
+  const { map } = await readCjReplyFiles([new File([await source.xlsx.writeBuffer()], "회신.xlsx")]);
+  assert.deepEqual(map.get("A"), ["0001", "0002"]);
+  const { applyTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  const applied = applyTracking(["상품주문번호", "운송장번호"], [{ 상품주문번호: "A" }], new Map([["A", ["0001", "0001", "0002"]]]));
+  assert.deepEqual(applied.updatedHeaders, ["상품주문번호", "운송장번호", "운송장번호(2)"]);
 });
 
 test("CJ ZIP and combined workbook use original product names with item name fallback", async () => {

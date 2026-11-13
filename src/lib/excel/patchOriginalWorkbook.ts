@@ -7,8 +7,9 @@ const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationsh
 export type TCellPatch = {
   address: string;
   value?: string;
-  highlight: boolean;
+  highlight?: boolean;
   text?: boolean;
+  styleFrom?: string;
 };
 
 export type TSheetPatch = { name: string; cells: TCellPatch[] };
@@ -59,11 +60,12 @@ export const patchOriginalWorkbook = async (buffer: ArrayBuffer, patches: TSheet
   const fillIds = new Map<boolean, number>();
   const styleIds = new Map<string, number>();
 
-  const styleFor = (sourceId: number, highlight: boolean, text: boolean) => {
+  const styleFor = (sourceId: number, highlight: boolean | undefined, text: boolean) => {
+    if (highlight === undefined && !text) return sourceId;
     const key = `${sourceId}:${highlight}:${text}`;
     const cached = styleIds.get(key);
     if (cached !== undefined) return cached;
-    let fillId = fillIds.get(highlight);
+    let fillId = fillIds.get(highlight ?? false);
     if (fillId === undefined) {
       fillId = children(fills, "fill").length;
       const fill = styles.createElementNS(NS, "fill");
@@ -77,7 +79,7 @@ export const patchOriginalWorkbook = async (buffer: ArrayBuffer, patches: TSheet
       fill.appendChild(pattern);
       fills.appendChild(fill);
       fills.setAttribute("count", String(fillId + 1));
-      fillIds.set(highlight, fillId);
+      fillIds.set(highlight ?? false, fillId);
     }
     const source = originalXfs[sourceId] ?? originalXfs[0];
     if (!source) throw new Error("원본 엑셀의 셀 스타일을 읽을 수 없습니다.");
@@ -105,6 +107,7 @@ export const patchOriginalWorkbook = async (buffer: ArrayBuffer, patches: TSheet
     const rowMap = new Map(children(sheetData, "row").map((row) => [Number(row.getAttribute("r")), row]));
     const cellMap = new Map(Array.from(document.getElementsByTagNameNS(NS, "c"))
       .map((cell) => [cell.getAttribute("r"), cell]));
+    const originalStyleIds = new Map(Array.from(cellMap, ([address, cell]) => [address, cell.getAttribute("s")]));
     let maxRow = 1;
     let maxColumn = 1;
 
@@ -129,10 +132,13 @@ export const patchOriginalWorkbook = async (buffer: ArrayBuffer, patches: TSheet
         row.insertBefore(cell, next ?? null);
         cellMap.set(cellPatch.address, cell);
       }
+      const styleAddress = cellPatch.styleFrom ?? cellPatch.address;
+      const styleColumn = columnNumber(styleAddress);
+      const styleRow = rowMap.get(Number(styleAddress.match(/\d+$/)?.[0]));
       const columnStyle = Array.from(document.getElementsByTagNameNS(NS, "col"))
-        .find((col) => Number(col.getAttribute("min")) <= column && Number(col.getAttribute("max")) >= column)
+        .find((col) => Number(col.getAttribute("min")) <= styleColumn && Number(col.getAttribute("max")) >= styleColumn)
         ?.getAttribute("style");
-      const sourceStyle = Number(cell.getAttribute("s") || row.getAttribute("s") || columnStyle || 0);
+      const sourceStyle = Number(originalStyleIds.get(styleAddress) || styleRow?.getAttribute("s") || columnStyle || 0);
       cell.setAttribute("s", String(styleFor(sourceStyle, cellPatch.highlight, cellPatch.text ?? false)));
       if (cellPatch.value !== undefined) {
         while (cell.firstChild) cell.removeChild(cell.firstChild);

@@ -133,7 +133,7 @@ export const readCjReplyFiles = async (
 
       // ✅ 운송장 누적 (같은 파일 내 중복 주문번호는 정상)
       const list = map.get(orderNo) ?? [];
-      list.push(tracking);
+      if (!list.includes(tracking)) list.push(tracking);
       map.set(orderNo, list);
 
       // ✅ 파일별 주문번호 추적 (서로 다른 파일 중복 검사용)
