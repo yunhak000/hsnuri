@@ -522,3 +522,70 @@ test("CJ ZIP and combined workbook use original product names with item name fal
     assert.deepEqual(salesAccounts, expectedSalesAccounts);
   }
 });
+
+test("missing order numbers remain in unmatched results and the downloaded workbook", async () => {
+  const source = new ExcelJS.Workbook();
+  const sheet = source.addWorksheet("원본");
+  sheet.addRow(["상품주문번호", "★쇼핑몰 주문번호★", "품목명", "박스수량", "운송장번호"]);
+  sheet.addRow(["", "", "감귤", 6, ""]);
+  sheet.addRow([]);
+  sheet.addRow(["A", "", "감귤", 1, ""]);
+  sheet.addRow(["", "B", "감귤", 1, ""]);
+  const { readExcelFile } = load("src/lib/excel/read.ts");
+  const original = await readExcelFile(new File([await source.xlsx.writeBuffer()], "원본.xlsx"));
+  assert.deepEqual(original.rowNumbers, [2, 4, 5]);
+
+  const replyBook = new ExcelJS.Workbook();
+  const replySheet = replyBook.addWorksheet("회신");
+  replySheet.addRow(["고객주문번호", "운송장번호"]);
+  replySheet.addRow(["", "000123"]);
+  replySheet.addRow([]);
+  replySheet.addRow(["A", "000456"]);
+  replySheet.addRow(["B", "000789"]);
+  replySheet.addRow(["C", ""]);
+  const { readCjReplyFiles } = load("src/lib/excel/readCJReply.ts");
+  const reply = await readCjReplyFiles([new File([await replyBook.xlsx.writeBuffer()], "회신.xlsx")]);
+  assert.equal(reply.map.size, 2);
+  assert.deepEqual(reply.unmatched.map((row) => [row.customerOrderNo, row.tracking, row.rowNumber, row.reason]), [
+    ["", "000123", 2, "고객주문번호 비어있음"],
+    ["C", "", 6, "운송장번호 비어있음"],
+  ]);
+  const { applyTracking, downloadUnmatchedExcel } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  const applied = applyTracking(original.headers, original.rows, reply.map, { fileName: "원본.xlsx", rowNumbers: original.rowNumbers });
+  assert.equal(applied.unmatched.length, 1);
+  assert.equal(applied.unmatched[0].source, "원본");
+  assert.equal(applied.unmatched[0].rowNumber, 2);
+  assert.equal(applied.updatedRows[0].운송장번호, "");
+  assert.equal(applied.updatedRows[1].운송장번호, "000456");
+  assert.equal(applied.updatedRows[2].운송장번호, "000789");
+  const unmatched = [...applied.unmatched, ...reply.unmatched];
+  assert.equal(unmatched.length, 3);
+  const unmatchedReplyKeys = new Set(applied.unmatched.filter((row) => row.source === "회신" && reply.map.has(row.customerOrderNo)).map((row) => row.customerOrderNo));
+  assert.equal(reply.map.size - unmatchedReplyKeys.size, 2);
+  downloads = [];
+  await downloadUnmatchedExcel(unmatched);
+  const exported = new ExcelJS.Workbook();
+  await exported.xlsx.load(await downloads[0].blob.arrayBuffer());
+  const output = exported.worksheets[0];
+  assert.equal(output.rowCount, 4);
+  assert.equal(output.getCell("D2").value, "원본.xlsx");
+  assert.equal(output.getCell("E2").value, 2);
+  assert.match(output.getCell("F2").value, /원본 주문번호 비어있음/);
+  assert.equal(output.getCell("B3").value, "000123");
+  assert.equal(output.getCell("D3").value, "회신.xlsx");
+  assert.equal(output.getCell("F3").value, "고객주문번호 비어있음");
+});
+
+test("reply without a customer order column retains every data row as unmatched", async () => {
+  const source = new ExcelJS.Workbook();
+  const sheet = source.addWorksheet("회신");
+  sheet.addRow(["운송장번호", "받는분성명"]);
+  sheet.addRow(["000123", "테스트"]);
+  const { readCjReplyFiles } = load("src/lib/excel/readCJReply.ts");
+  const reply = await readCjReplyFiles([new File([await source.xlsx.writeBuffer()], "번호컬럼없음.xlsx")]);
+  assert.equal(reply.map.size, 0);
+  assert.equal(reply.unmatched.length, 1);
+  assert.equal(reply.unmatched[0].tracking, "000123");
+  assert.equal(reply.unmatched[0].reason, "고객주문번호 컬럼 없음");
+  assert.equal(reply.unmatched[0].rowNumber, 2);
+});

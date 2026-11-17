@@ -21,6 +21,7 @@ export type TJobState = {
   // 원본 전체 row를 저장 (새로고침 대비)
   originalRows: TOriginalRow[];
   originalHeaders: string[];
+  originalRowNumbers?: number[];
   originalWorkbookBuffer?: ArrayBuffer;
   replyTrackingByOrder?: Record<string, string[]>;
 

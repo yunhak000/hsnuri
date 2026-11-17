@@ -12,6 +12,7 @@ import {
   downloadCjUploadsZip,
   downloadCjUploadsSingle,
 } from "@/lib/excel/writeCJUploads";
+import type { TUnmatchedRow } from "@/lib/excel/unmatched";
 import { readCjReplyFiles } from "@/lib/excel/readCJReply";
 import {
   applyTracking,
@@ -116,7 +117,7 @@ export default function HomePage() {
 
   // ✅ Step 4 결과 표시용
   const [localResult, setLocalResult] = useState<{
-    unmatched: Array<{ customerOrderNo: string; tracking: string }>;
+    unmatched: TUnmatchedRow[];
     duplicates: Array<{ key: string; count: number }>;
     matchedCount: number;
     totalReplyCount: number;
@@ -242,12 +243,13 @@ export default function HomePage() {
       setError("");
       setBusy(true, "원본 엑셀 읽는 중...");
 
-      const { headers, rows, originalWorkbookBuffer } = await readExcelFile(file);
+      const { headers, rows, rowNumbers, originalWorkbookBuffer } = await readExcelFile(file);
 
       const next: TJobState = {
         createdAt: new Date().toISOString(),
         originalFileName: file.name,
         originalHeaders: headers,
+        originalRowNumbers: rowNumbers,
         originalRows: rows,
         originalWorkbookBuffer,
         uploadedReplyFiles: [],
@@ -376,7 +378,10 @@ export default function HomePage() {
       }
 
       setBusy(true, "CJ 회신 파일 읽는 중...");
-      const { map, orderFileMap } = await readCjReplyFiles(accepted);
+      const { map, orderFileMap, unmatched: invalidReplies, skipped } = await readCjReplyFiles(accepted);
+      if (skipped.length > 0) {
+        setError(skipped.map((item) => `${item.sourceFileName}: ${item.reason}`).join("\n"));
+      }
 
       /**
        * ✅ 서로 다른 파일에 동일 고객주문번호가 있으면 전체 업로드 차단
@@ -405,7 +410,10 @@ export default function HomePage() {
 
       setBusy(true, "운송장번호 매핑 중...");
       const { updatedHeaders, updatedRows, unmatched, duplicates } =
-        applyTracking(job.originalHeaders, job.originalRows as TRow[], map);
+        applyTracking(job.originalHeaders, job.originalRows as TRow[], map, {
+          fileName: job.originalFileName,
+          rowNumbers: job.originalRowNumbers,
+        });
 
       const next: TJobState = {
         ...job,
@@ -423,12 +431,12 @@ export default function HomePage() {
 
       const unmatchedReplyKeys = new Set(
         unmatched
-          .filter((u) => String(u.tracking ?? "").trim() !== "")
+          .filter((u) => u.source === "회신" && map.has(u.customerOrderNo))
           .map((u) => u.customerOrderNo),
       );
 
       setLocalResult({
-        unmatched,
+        unmatched: [...unmatched, ...invalidReplies],
         duplicates,
         matchedCount: map.size - unmatchedReplyKeys.size,
         totalReplyCount: map.size,
@@ -847,13 +855,17 @@ export default function HomePage() {
                         <tr>
                           <th className={ui.th}>고객주문번호</th>
                           <th className={ui.th}>운송장번호</th>
+                          <th className={ui.th}>파일 / 행</th>
+                          <th className={ui.th}>미매칭 사유</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {localResult.unmatched.slice(0, 20).map((u) => (
-                          <tr key={`${u.customerOrderNo}-${u.tracking}`}>
-                            <td className={ui.td}>{u.customerOrderNo}</td>
+                        {localResult.unmatched.slice(0, 20).map((u, index) => (
+                          <tr key={index}>
+                            <td className={ui.td}>{u.customerOrderNo || "(없음)"}</td>
                             <td className={ui.td}>{u.tracking}</td>
+                            <td className={ui.td}>{u.source} {u.sourceFileName}{u.rowNumber != null ? ` / ${u.rowNumber}행` : ""}</td>
+                            <td className={ui.td}>{u.reason}</td>
                           </tr>
                         ))}
                       </tbody>

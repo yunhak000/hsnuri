@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import type { TUnmatchedRow } from "./unmatched";
 import { CJ_REPLY_KEY_COL, CJ_REPLY_TRACKING_COL } from "@/lib/constants/excel";
 import { normalizeHeader, toText } from "@/lib/utils/normalize";
 
@@ -84,6 +85,7 @@ export const readCjReplyFile = async (
 };
 
 export type TReadReplyFilesResult = {
+  unmatched: TUnmatchedRow[];
   map: Map<string, string[]>; // 고객주문번호 -> 운송장번호들
   orderFileMap: Map<string, Set<string>>; // 고객주문번호 -> 등장한 파일명 set
   skipped: Array<{ reason: string; sourceFileName: string }>;
@@ -92,6 +94,7 @@ export type TReadReplyFilesResult = {
 export const readCjReplyFiles = async (
   files: File[],
 ): Promise<TReadReplyFilesResult> => {
+  const unmatched: TUnmatchedRow[] = [];
   const map = new Map<string, string[]>();
   const orderFileMap = new Map<string, Set<string>>();
   const skipped: Array<{ reason: string; sourceFileName: string }> = [];
@@ -119,17 +122,28 @@ export const readCjReplyFiles = async (
         reason: `필수 컬럼을 찾지 못함: ${CJ_REPLY_KEY_COL} / ${CJ_REPLY_TRACKING_COL}`,
         sourceFileName: file.name,
       });
-      continue;
     }
 
     ws.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
 
-      const orderNo = toText(row.getCell(keyCol).value).trim();
-      const tracking = toText(row.getCell(trackingCol).value).trim();
+      const orderNo = keyCol ? toText(row.getCell(keyCol).value).trim() : "";
+      const tracking = trackingCol ? toText(row.getCell(trackingCol).value).trim() : "";
 
-      if (!orderNo) return;
-      if (!tracking) return;
+      if (!orderNo || !tracking) {
+        unmatched.push({
+          customerOrderNo: orderNo,
+          tracking,
+          source: "회신",
+          sourceFileName: file.name,
+          rowNumber,
+          reason: [
+            !orderNo ? (keyCol ? "고객주문번호 비어있음" : "고객주문번호 컬럼 없음") : "",
+            !tracking ? (trackingCol ? "운송장번호 비어있음" : "운송장번호 컬럼 없음") : "",
+          ].filter(Boolean).join(" / "),
+        });
+        return;
+      }
 
       // ✅ 운송장 누적 (같은 파일 내 중복 주문번호는 정상)
       const list = map.get(orderNo) ?? [];
@@ -143,5 +157,5 @@ export const readCjReplyFiles = async (
     });
   }
 
-  return { map, orderFileMap, skipped };
+  return { map, orderFileMap, skipped, unmatched };
 };

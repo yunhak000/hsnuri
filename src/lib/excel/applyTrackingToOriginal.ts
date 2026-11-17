@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import type { TUnmatchedRow } from "./unmatched";
 import { saveAs } from "file-saver";
 import {
   ORIGINAL_KEY_COL,
@@ -15,7 +16,7 @@ type TRow = Record<string, unknown>;
 export type TApplyResult = {
   updatedHeaders: string[];
   updatedRows: TRow[];
-  unmatched: Array<{ customerOrderNo: string; tracking: string }>;
+  unmatched: TUnmatchedRow[];
   duplicates: Array<{ key: string; count: number }>;
 };
 
@@ -53,6 +54,7 @@ export const applyTracking = (
   originalHeaders: string[],
   originalRows: TRow[],
   replyMap: Map<string, string[]>, // 고객주문번호 -> 운송장번호[]
+  source: { fileName?: string; rowNumbers?: number[] } = {},
 ): TApplyResult => {
   replyMap = new Map(Array.from(replyMap, ([key, values]) => [
     key, Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))),
@@ -85,13 +87,23 @@ export const applyTracking = (
 
   // apply (immutable clone)
   const updated: TRow[] = originalRows.map((r) => ({ ...r }));
-  const unmatched: Array<{ customerOrderNo: string; tracking: string }> = [];
+  const unmatched: TUnmatchedRow[] = [];
 
   // index: key -> row indexes
   const index = new Map<string, number[]>();
   updated.forEach((r, i) => {
     const k = getOriginalOrderKey(r, keyHeader, fallbackKeyHeader);
-    if (!k) return;
+    if (!k) {
+      unmatched.push({
+        customerOrderNo: "",
+        tracking: toText(r[trackingHeader]).trim(),
+        source: "원본",
+        sourceFileName: source.fileName,
+        rowNumber: source.rowNumbers?.[i],
+        reason: "원본 주문번호 비어있음 (상품주문번호 / ★쇼핑몰 주문번호★)",
+      });
+      return;
+    }
     const arr = index.get(k) ?? [];
     arr.push(i);
     index.set(k, arr);
@@ -131,7 +143,7 @@ export const applyTracking = (
     if (!idxs || idxs.length === 0) {
       // 회신에 운송장이 여러 개면 모두 unmatched로 기록 (원본에 없는 주문번호)
       for (const t of trackingList) {
-        unmatched.push({ customerOrderNo, tracking: t });
+        unmatched.push({ customerOrderNo, tracking: t, source: "회신", reason: "원본에 없는 주문번호" });
       }
       continue;
     }
@@ -166,7 +178,7 @@ export const applyTracking = (
 
   // ✅ 원본에는 있지만 회신에 없는 주문번호를 unmatched에 추가
   for (const key of originalKeys) {
-    unmatched.push({ customerOrderNo: key, tracking: "" });
+    unmatched.push({ customerOrderNo: key, tracking: "", source: "원본", sourceFileName: source.fileName, reason: "회신에 유효한 운송장번호 없음" });
   }
 
   // ✅ 모든 row에 tracking 컬럼 빈값 보장
@@ -327,7 +339,7 @@ export const downloadOriginalWithTracking = async (
 };
 
 export const downloadUnmatchedExcel = async (
-  unmatched: Array<{ customerOrderNo: string; tracking: string }>,
+  unmatched: TUnmatchedRow[],
 ) => {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("미매칭");
@@ -335,6 +347,10 @@ export const downloadUnmatchedExcel = async (
   ws.columns = [
     { header: "고객주문번호", key: "customerOrderNo", width: 24 },
     { header: "운송장번호", key: "tracking", width: 20 },
+    { header: "구분", key: "source", width: 10 },
+    { header: "파일명", key: "sourceFileName", width: 30 },
+    { header: "엑셀 행 번호", key: "rowNumber", width: 15 },
+    { header: "미매칭 사유", key: "reason", width: 60 },
   ];
 
   unmatched.forEach((u) => ws.addRow(u));
