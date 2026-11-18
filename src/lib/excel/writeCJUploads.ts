@@ -1,9 +1,11 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import { CJ_UPLOAD_HEADERS, ORIGINAL_ITEM_COL, ORIGINAL_KEY_COL, ORIGINAL_FALLBACK_KEY_COL } from "@/lib/constants/excel";
+import { CJ_UPLOAD_HEADERS, ORIGINAL_ITEM_COL, ORIGINAL_ORDER_KEY_COLS } from "@/lib/constants/excel";
 import { makeDatedFileName } from "@/lib/utils/filename";
 import { normalizeHeader, toText } from "@/lib/utils/normalize";
+
+import { getOriginalOrderKey } from "@/lib/utils/orderKey";
 
 type TRow = Record<string, unknown>;
 
@@ -62,21 +64,6 @@ const pick = (row: TRow, candidates: string[]) => {
 
 /**
  * ===============================
- * ✅ CJ 고객주문번호 결정
- * ===============================
- */
-const getOrderKeyForCj = (row: TRow) => {
-  const primary = pick(row, [ORIGINAL_KEY_COL, "상품주문번호"]);
-  if (primary) return primary;
-
-  const fallback = pick(row, [ORIGINAL_FALLBACK_KEY_COL, "★쇼핑몰 주문번호★"]);
-  if (fallback) return fallback;
-
-  return "";
-};
-
-/**
- * ===============================
  * ✅ CJ 컬럼 매핑 테이블
  * ===============================
  */
@@ -96,7 +83,7 @@ const CJ_VALUE_MAP: Record<string, string[]> = {
 
   // ===== 주문번호 =====
   거래처주문번호: ["사방넷 주문번호", "사방넷주문번호", "주문번호"],
-  상품주문번호: [ORIGINAL_KEY_COL, "상품주문번호", ORIGINAL_FALLBACK_KEY_COL, "★쇼핑몰 주문번호★"],
+  상품주문번호: [...ORIGINAL_ORDER_KEY_COLS],
 
   // ===== 보내는분(주문자 매핑) =====
   보내는분성명: ["보내는분성명", "주문자", "주문자명", "주문자성명", "구매자", "구매자명"],
@@ -131,7 +118,7 @@ export const buildCjGroupedRows = (originalHeaders: string[], originalRows: TRow
 
     if (!itemName) continue;
 
-    const orderKey = getOrderKeyForCj(row);
+    const orderKey = getOriginalOrderKey(row);
     if (!orderKey) continue;
 
     const arr = groups.get(itemName) ?? [];

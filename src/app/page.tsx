@@ -493,7 +493,7 @@ export default function HomePage() {
 
   return (
     <div className={ui.page}>
-      <main className={ui.container}>
+      <main className={`${ui.container} ${step === 4 ? "md:max-w-6xl" : ""}`}>
         <header className="mb-6 flex items-center gap-3 border-b border-[#e5e8eb] pb-5">
           <div className="relative h-14 w-14 shrink-0 overflow-hidden mix-blend-multiply">
             <Image
@@ -849,23 +849,53 @@ export default function HomePage() {
                     미매칭 리스트{" "}
                     <span className="text-[#8b95a1]">(상위 20개)</span>
                   </div>
-                  <div className={ui.tableWrap}>
-                    <table className={ui.table}>
-                      <thead className={ui.thead}>
+                  <div className="max-h-[32rem] space-y-3 overflow-y-auto md:hidden">
+                    {localResult.unmatched.slice(0, 20).map((u, index) => (
+                      <article key={index} className="rounded-2xl border border-[#e5e8eb] bg-white p-4 text-[14px]">
+                        <dl className="space-y-3">
+                          <div>
+                            <dt className="text-[12px] font-semibold text-[#6b7684]">고객주문번호</dt>
+                            <dd className="mt-1 break-all font-semibold text-[#191f28]">{u.customerOrderNo || "(없음)"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[12px] font-semibold text-[#6b7684]">운송장번호</dt>
+                            <dd className="mt-1 break-all">{u.tracking || "(없음)"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[12px] font-semibold text-[#6b7684]">파일 / 행</dt>
+                            <dd className="mt-1 break-words [overflow-wrap:anywhere]">{u.source} {u.sourceFileName}{u.rowNumber != null ? ` / ${u.rowNumber}행` : ""}</dd>
+                          </div>
+                          <div className="rounded-xl bg-[#fff0f0] p-3">
+                            <dt className="text-[12px] font-semibold text-[#b3261e]">미매칭 사유</dt>
+                            <dd className="mt-1 break-words leading-relaxed text-[#b3261e] [overflow-wrap:anywhere]">{u.reason}</dd>
+                          </div>
+                        </dl>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="hidden max-h-[32rem] overflow-auto rounded-2xl border border-[#e5e8eb] bg-white md:block">
+                    <table className="w-full min-w-[800px] table-fixed text-[14px]">
+                      <colgroup>
+                        <col className="w-[20%]" />
+                        <col className="w-[18%]" />
+                        <col className="w-[27%]" />
+                        <col className="w-[35%]" />
+                      </colgroup>
+                      <thead className={`${ui.thead} z-10`}>
                         <tr>
-                          <th className={ui.th}>고객주문번호</th>
-                          <th className={ui.th}>운송장번호</th>
-                          <th className={ui.th}>파일 / 행</th>
-                          <th className={ui.th}>미매칭 사유</th>
+                          <th className={`${ui.th} whitespace-nowrap`}>고객주문번호</th>
+                          <th className={`${ui.th} whitespace-nowrap`}>운송장번호</th>
+                          <th className={`${ui.th} whitespace-nowrap`}>파일 / 행</th>
+                          <th className={`${ui.th} whitespace-nowrap`}>미매칭 사유</th>
                         </tr>
                       </thead>
                       <tbody>
                         {localResult.unmatched.slice(0, 20).map((u, index) => (
-                          <tr key={index}>
-                            <td className={ui.td}>{u.customerOrderNo || "(없음)"}</td>
-                            <td className={ui.td}>{u.tracking}</td>
-                            <td className={ui.td}>{u.source} {u.sourceFileName}{u.rowNumber != null ? ` / ${u.rowNumber}행` : ""}</td>
-                            <td className={ui.td}>{u.reason}</td>
+                          <tr key={index} className="align-top even:bg-[#f9fafb]">
+                            <td className={`${ui.td} break-all font-medium`}>{u.customerOrderNo || "(없음)"}</td>
+                            <td className={`${ui.td} break-all font-medium`}>{u.tracking || "(없음)"}</td>
+                            <td className={`${ui.td} break-words leading-relaxed [overflow-wrap:anywhere]`}>{u.source} {u.sourceFileName}{u.rowNumber != null ? ` / ${u.rowNumber}행` : ""}</td>
+                            <td className={`${ui.td} break-words leading-relaxed [overflow-wrap:anywhere]`}><span className="font-medium text-[#b3261e]">{u.reason}</span></td>
                           </tr>
                         ))}
                       </tbody>

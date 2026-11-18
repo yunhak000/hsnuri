@@ -589,3 +589,44 @@ test("reply without a customer order column retains every data row as unmatched"
   assert.equal(reply.unmatched[0].reason, "고객주문번호 컬럼 없음");
   assert.equal(reply.unmatched[0].rowNumber, 2);
 });
+
+test("customer order fallback survives CJ generation, reply matching and all-sheet export", async () => {
+  const { getOriginalOrderKey } = load("src/lib/utils/orderKey.ts");
+  const { buildCjGroupedRows } = load("src/lib/excel/writeCJUploads.ts");
+  const { readExcelFile } = load("src/lib/excel/read.ts");
+  const { applyTracking, downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  const headers = ["상품주문번호", "★쇼핑몰 주문번호★", "고객 주문번호", "품목명", "운송장번호"];
+  const values = [
+    ["P1", "S1", "C1", "감귤", ""],
+    [" ", "S2", "C2", "감귤", ""],
+    ["", " ", "000003", "감귤", ""],
+    ["", "", "", "감귤", ""],
+  ];
+  const source = new ExcelJS.Workbook();
+  source.addWorksheet("안내").addRow(["메모"]);
+  const main = source.addWorksheet("원본");
+  main.addRow(headers);
+  values.forEach((row) => main.addRow(row));
+  const detail = source.addWorksheet("상세");
+  detail.addRow(["고객주문번호", "운송장번호"]);
+  detail.addRow(["000003", ""]);
+  const original = await readExcelFile(new File([await source.xlsx.writeBuffer()], "고객주문.xlsx"));
+  assert.deepEqual(original.rows.map(getOriginalOrderKey), ["P1", "S2", "000003", ""]);
+  assert.equal(getOriginalOrderKey({ 고객주문번호: { result: "000004" } }), "000004");
+  const grouped = buildCjGroupedRows(original.headers, original.rows);
+  assert.deepEqual(grouped.get("감귤").map((row) => row.상품주문번호), ["P1", "S2", "000003"]);
+  const reply = new Map([["P1", ["001"]], ["S2", ["002"]], ["000003", ["003", "004"]]]);
+  const applied = applyTracking(original.headers, original.rows, reply);
+  assert.deepEqual(applied.updatedRows.map((row) => row.운송장번호), ["001", "002", "003", ""]);
+  assert.equal(applied.updatedRows[2]["운송장번호(2)"], "004");
+  assert.equal(applied.unmatched.length, 1);
+  assert.match(applied.unmatched[0].reason, /고객주문번호/);
+  downloads = [];
+  await downloadOriginalWithTracking(applied.updatedHeaders, applied.updatedRows, "고객주문.xlsx", original.originalWorkbookBuffer);
+  const exported = new ExcelJS.Workbook();
+  await exported.xlsx.load(await downloads[0].blob.arrayBuffer());
+  assert.equal(exported.getWorksheet("원본").getCell("E4").value, "003");
+  assert.equal(exported.getWorksheet("원본").getCell("F4").value, "004");
+  assert.equal(exported.getWorksheet("상세").getCell("B2").value, "003");
+  assert.equal(exported.getWorksheet("상세").getCell("C2").value, "004");
+});

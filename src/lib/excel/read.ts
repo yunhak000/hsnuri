@@ -1,8 +1,7 @@
 import ExcelJS from "exceljs";
 import {
-  ORIGINAL_FALLBACK_KEY_COL,
   ORIGINAL_ITEM_COL,
-  ORIGINAL_KEY_COL,
+  ORIGINAL_ORDER_KEY_COLS,
 } from "@/lib/constants/excel";
 import { normalizeHeader } from "@/lib/utils/normalize";
 
@@ -37,12 +36,7 @@ const pickWorksheet = (workbook: ExcelJS.Workbook) => {
   for (const ws of worksheets) {
     const headers = readHeaders(ws);
     const hasItem = hasAnyHeader(headers, [ORIGINAL_ITEM_COL, "상품명", "품목명"]);
-    const hasOrderKey = hasAnyHeader(headers, [
-      ORIGINAL_KEY_COL,
-      ORIGINAL_FALLBACK_KEY_COL,
-      "상품주문번호",
-      "★쇼핑몰 주문번호★",
-    ]);
+    const hasOrderKey = hasAnyHeader(headers, [...ORIGINAL_ORDER_KEY_COLS]);
 
     if (hasItem && hasOrderKey) return ws;
   }

@@ -2,14 +2,15 @@ import ExcelJS from "exceljs";
 import type { TUnmatchedRow } from "./unmatched";
 import { saveAs } from "file-saver";
 import {
-  ORIGINAL_KEY_COL,
-  ORIGINAL_FALLBACK_KEY_COL,
+  ORIGINAL_ORDER_KEY_COLS,
   ORIGINAL_TRACKING_COL, // "운송장번호"
 } from "@/lib/constants/excel";
 import { makeDatedFileName } from "@/lib/utils/filename";
 import { normalizeHeader, toText } from "@/lib/utils/normalize";
 import { patchOriginalWorkbook, type TCellPatch, type TSheetPatch } from "@/lib/excel/patchOriginalWorkbook";
 import { isSabangnetHeaders } from "@/lib/excel/orderFormat";
+
+import { getOriginalOrderKey } from "@/lib/utils/orderKey";
 
 type TRow = Record<string, unknown>;
 
@@ -31,21 +32,6 @@ const getHeader = (originalHeaders: string[], wanted: string) => {
 const hasHeader = (originalHeaders: string[], wanted: string) =>
   originalHeaders.some((h) => normalizeHeader(h) === normalizeHeader(wanted));
 
-// ✅ 원본 키: 상품주문번호 우선, 없으면 ★쇼핑몰 주문번호★
-const getOriginalOrderKey = (
-  row: TRow,
-  keyHeader: string,
-  fallbackKeyHeader: string,
-) => {
-  const primary = String(row[keyHeader] ?? "").trim();
-  if (primary) return primary;
-
-  const fallback = String(row[fallbackKeyHeader] ?? "").trim();
-  if (fallback) return fallback;
-
-  return "";
-};
-
 // 운송장번호(2) / 송장번호(2) 같은 컬럼명 생성
 const trackingNthHeader = (baseTrackingHeader: string, n: number) =>
   `${baseTrackingHeader}(${n})`;
@@ -59,12 +45,6 @@ export const applyTracking = (
   replyMap = new Map(Array.from(replyMap, ([key, values]) => [
     key, Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))),
   ]));
-  const keyHeader = getHeader(originalHeaders, ORIGINAL_KEY_COL);
-  const fallbackKeyHeader = getHeader(
-    originalHeaders,
-    ORIGINAL_FALLBACK_KEY_COL,
-  );
-
   // ✅ tracking 컬럼 선택 규칙
   // - 원본에 "송장번호"가 있으면: "송장번호" 기반으로 넣고 확장도 "송장번호(2..)"
   // - 아니면: 기존대로 "운송장번호" 기반
@@ -77,7 +57,7 @@ export const applyTracking = (
   // duplicate keys in original (실제 사용 키 기준)
   const counts = new Map<string, number>();
   for (const r of originalRows) {
-    const k = getOriginalOrderKey(r, keyHeader, fallbackKeyHeader);
+    const k = getOriginalOrderKey(r);
     if (!k) continue;
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
@@ -92,7 +72,7 @@ export const applyTracking = (
   // index: key -> row indexes
   const index = new Map<string, number[]>();
   updated.forEach((r, i) => {
-    const k = getOriginalOrderKey(r, keyHeader, fallbackKeyHeader);
+    const k = getOriginalOrderKey(r);
     if (!k) {
       unmatched.push({
         customerOrderNo: "",
@@ -100,7 +80,7 @@ export const applyTracking = (
         source: "원본",
         sourceFileName: source.fileName,
         rowNumber: source.rowNumbers?.[i],
-        reason: "원본 주문번호 비어있음 (상품주문번호 / ★쇼핑몰 주문번호★)",
+        reason: "원본 주문번호 비어있음 (상품주문번호 / ★쇼핑몰 주문번호★ / 고객주문번호)",
       });
       return;
     }
@@ -240,13 +220,11 @@ const fillTrackingInAllWorksheets = (
   rows: TRow[],
   replyTrackingByOrder: Record<string, string[]> = {},
 ) => {
-  const primaryHeader = getHeader(headers, ORIGINAL_KEY_COL);
-  const fallbackHeader = getHeader(headers, ORIGINAL_FALLBACK_KEY_COL);
   const trackingHeaders = headers.filter(isTrackingCol);
   const trackingByKey = new Map<string, string[]>();
   const uniqueTracking = (values: string[]) => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
   for (const row of rows) {
-    const key = getOriginalOrderKey(row, primaryHeader, fallbackHeader);
+    const key = getOriginalOrderKey(row);
     if (key) trackingByKey.set(key, uniqueTracking(trackingHeaders.map((header) => toText(row[header]))));
   }
   for (const [key, values] of Object.entries(replyTrackingByOrder)) {
@@ -264,11 +242,10 @@ const fillTrackingInAllWorksheets = (
       columns.set(header, column);
       lastHeaderColumn = Math.max(lastHeaderColumn, column);
     });
-    const primaryCol = columns.get(normalizeHeader(ORIGINAL_KEY_COL));
-    const fallbackCol = columns.get(normalizeHeader(ORIGINAL_FALLBACK_KEY_COL));
+    const keyColumns = ORIGINAL_ORDER_KEY_COLS.map((header) => columns.get(normalizeHeader(header)));
     const trackingBase = columns.has(normalizeHeader(ALT_TRACKING_COL)) ? ALT_TRACKING_COL : ORIGINAL_TRACKING_COL;
     const baseColumn = columns.get(normalizeHeader(trackingBase));
-    if ((!primaryCol && !fallbackCol) || !baseColumn) continue;
+    if (!keyColumns.some(Boolean) || !baseColumn) continue;
 
     // 서식만 남은 빈 열은 무시하고, 실제 제목 바로 다음 열부터 추가한다.
     let nextColumn = lastHeaderColumn + 1;
@@ -279,8 +256,7 @@ const fillTrackingInAllWorksheets = (
 
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
-      const key = (primaryCol ? toText(row.getCell(primaryCol).value).trim() : "")
-        || (fallbackCol ? toText(row.getCell(fallbackCol).value).trim() : "");
+      const key = keyColumns.map((column) => column ? toText(row.getCell(column).value).trim() : "").find(Boolean) ?? "";
       const source = trackingByKey.get(key);
       if (!source) return;
 
