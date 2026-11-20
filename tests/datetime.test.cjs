@@ -630,3 +630,70 @@ test("customer order fallback survives CJ generation, reply matching and all-she
   assert.equal(exported.getWorksheet("상세").getCell("B2").value, "003");
   assert.equal(exported.getWorksheet("상세").getCell("C2").value, "004");
 });
+
+test("workspace routes mixed CJ replies to separate originals and holds cross-source collisions", async () => {
+  const { matchWorkspace } = load("src/lib/excel/matchWorkspace.ts");
+  const makeJob = async (source, keys) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("원본");
+    const headers = source === "sabangnet"
+      ? ["사방넷 주문번호", "쇼핑몰명", "상품약어", "상품명", "★쇼핑몰 주문번호★", "송장번호"]
+      : ["상품주문번호", "품목명", "박스수량", "운송장번호"];
+    sheet.addRow(headers);
+    for (const key of keys) sheet.addRow(source === "sabangnet" ? [`S-${key}`, "몰", "감귤", "감귤", key, ""] : [key, "감귤", 1, ""]);
+    const { readExcelFile } = load("src/lib/excel/read.ts");
+    const parsed = await readExcelFile(new File([await workbook.xlsx.writeBuffer()], `${source}.xlsx`));
+    return { createdAt: "today", originalFileName: `${source}.xlsx`, originalHeaders: parsed.headers, originalRows: parsed.rows, originalRowNumbers: parsed.rowNumbers, originalWorkbookBuffer: parsed.originalWorkbookBuffer };
+  };
+  const workspace = {
+    id: "current", jobs: { sabangnet: await makeJob("sabangnet", ["S1", "BOTH"]), admin: await makeJob("admin", ["A1", "A2", "BOTH"]) },
+    uploadedReplyFiles: [], replyTrackingByOrder: {},
+  };
+  const first = matchWorkspace(workspace, new Map([["S1", ["001"]], ["A1", ["002"]], ["BOTH", ["BAD"]], ["UNKNOWN", ["003"]]]));
+  assert.equal(workspace.jobs.admin.originalRows[0].운송장번호, "");
+  assert.equal(first.jobs.sabangnet.originalRows[0].송장번호, "001");
+  assert.equal(first.jobs.admin.originalRows[0].운송장번호, "002");
+  assert.equal(first.jobs.admin.originalRows[2].운송장번호, "");
+  assert.equal(first.jobs.sabangnet.originalRows[1].송장번호, "");
+  assert.equal(first.result.matchedCount, 2);
+  assert.deepEqual(first.result.sources.admin, { matchedCount: 1, unmatchedCount: 2 });
+  assert.ok(first.result.unmatched.some((row) => row.customerOrderNo === "BOTH" && row.reason.includes("보류")));
+  assert.ok(first.result.unmatched.some((row) => row.customerOrderNo === "UNKNOWN"));
+  const second = matchWorkspace(first, new Map([["A2", ["004", "005"]]]));
+  assert.equal(second.result.matchedCount, 3);
+  assert.equal(second.jobs.admin.originalRows[0].운송장번호, "002");
+  assert.equal(second.jobs.admin.originalRows[1]["운송장번호(2)"], "005");
+  assert.equal(second.result.sources.admin.unmatchedCount, 1);
+  const { downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  downloads = [];
+  for (const [source, job] of Object.entries(second.jobs)) {
+    await downloadOriginalWithTracking(job.originalHeaders, job.originalRows, source + ".xlsx", job.originalWorkbookBuffer, job.replyTrackingByOrder);
+  }
+  assert.equal(downloads.length, 2);
+  const sabang = new ExcelJS.Workbook();
+  await sabang.xlsx.load(await downloads[0].blob.arrayBuffer());
+  assert.equal(sabang.worksheets[0].getCell("F1").value, "001");
+  assert.equal(sabang.worksheets[0].getCell("F2").value, "");
+  const admin = new ExcelJS.Workbook();
+  await admin.xlsx.load(await downloads[1].blob.arrayBuffer());
+  assert.equal(admin.worksheets[0].getCell("D2").value, "002");
+  assert.equal(admin.worksheets[0].getCell("D3").value, "004");
+  assert.equal(admin.worksheets[0].getCell("E3").value, "005");
+  assert.equal(admin.worksheets[0].getCell("D4").value, "");
+});
+
+test("workspace supports a single source, persists invalid replies, and rejects conflicting original values atomically", () => {
+  const { matchWorkspace } = load("src/lib/excel/matchWorkspace.ts");
+  const workspace = {
+    id: "current", jobs: { admin: { createdAt: "today", originalFileName: "admin.xlsx", originalHeaders: ["상품주문번호", "운송장번호"], originalRows: [{ 상품주문번호: "A", 운송장번호: "OLD" }, { 상품주문번호: "B" }] } },
+    uploadedReplyFiles: [], replyTrackingByOrder: {},
+  };
+  assert.throws(() => matchWorkspace(workspace, new Map([["A", ["NEW"]]])), /원본 운송장/);
+  assert.equal(workspace.jobs.admin.originalRows[0].운송장번호, "OLD");
+  const issue = { customerOrderNo: "", tracking: "123", source: "회신", reason: "고객주문번호 비어있음" };
+  const first = matchWorkspace(workspace, new Map([["A", ["OLD"]]]), [issue]);
+  const second = matchWorkspace(first, new Map([["B", ["002"]]]));
+  assert.equal(second.result.matchedCount, 2);
+  assert.deepEqual(second.replyIssues, [issue]);
+  assert.equal(second.result.unmatched.length, 1);
+});

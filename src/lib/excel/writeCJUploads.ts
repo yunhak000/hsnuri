@@ -206,7 +206,7 @@ const makeCjWorkbookBuffer = async (rows: TRow[]) => {
  * ✅ ZIP 다운로드
  * ===============================
  */
-export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgress?: (done: number, total: number) => void) => {
+export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgress?: (done: number, total: number) => void, sourceLabel?: string) => {
   const zip = new JSZip();
   const entries = Array.from(groups.entries());
   const total = entries.length;
@@ -230,7 +230,7 @@ export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgre
   }
 
   const zipBlob = await zip.generateAsync({ type: "blob" });
-  saveAs(zipBlob, makeDatedFileName("한섬누리_CJ제출용_품목별엑셀.zip"));
+  saveAs(zipBlob, makeDatedFileName(`${sourceLabel ? `${sourceLabel}_` : ""}한섬누리_CJ제출용_품목별엑셀.zip`));
 };
 
 /**
@@ -240,12 +240,12 @@ export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgre
  * - CJ 매핑 로직(buildCjGroupedRows 결과)은 그대로 재사용
  * ===============================
  */
-export const downloadCjUploadsSingle = async (groups: Map<string, TRow[]>) => {
+export const downloadCjUploadsSingle = async (groups: Map<string, TRow[]>, sourceLabel?: string) => {
   const allRows: TRow[] = [];
   for (const rows of groups.values()) {
     for (const r of rows) allRows.push(r);
   }
 
   const buf = await makeCjWorkbookBuffer(allRows);
-  saveAs(new Blob([buf]), makeDatedFileName("한섬누리_CJ제출용_통합엑셀.xlsx"));
+  saveAs(new Blob([buf]), makeDatedFileName(`${sourceLabel ? `${sourceLabel}_` : ""}한섬누리_CJ제출용_통합엑셀.xlsx`));
 };

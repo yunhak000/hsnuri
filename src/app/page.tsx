@@ -12,14 +12,15 @@ import {
   downloadCjUploadsZip,
   downloadCjUploadsSingle,
 } from "@/lib/excel/writeCJUploads";
-import type { TUnmatchedRow } from "@/lib/excel/unmatched";
 import { readCjReplyFiles } from "@/lib/excel/readCJReply";
 import {
-  applyTracking,
   downloadOriginalWithTracking,
   downloadUnmatchedExcel,
 } from "@/lib/excel/applyTrackingToOriginal";
-import { clearJob, loadJob, saveJob, type TJobState } from "@/lib/db";
+import { clearWorkspace, loadWorkspace, saveWorkspace, SOURCE_LABELS, type TSource, type TWorkspace, type TJobState } from "@/lib/db";
+import { matchWorkspace } from "@/lib/excel/matchWorkspace";
+import { isSabangnetHeaders } from "@/lib/excel/orderFormat";
+import { getOriginalOrderKey } from "@/lib/utils/orderKey";
 import {
   fingerprintFile,
   isSameFingerprint,
@@ -115,19 +116,13 @@ export default function HomePage() {
   });
   const [error, setError] = useState<string>("");
 
-  // ✅ Step 4 결과 표시용
-  const [localResult, setLocalResult] = useState<{
-    unmatched: TUnmatchedRow[];
-    duplicates: Array<{ key: string; count: number }>;
-    matchedCount: number;
-    totalReplyCount: number;
-  } | null>(null);
-
-  // persisted job (Dexie)
-  const [job, setJob] = useState<TJobState | null>(null);
-
-  // ✅ file input reset을 위해 ref 사용 (리셋 시 파일명/선택값 완전 제거)
-  const originalInputRef = useRef<HTMLInputElement | null>(null);
+  const [workspace, setWorkspace] = useState<TWorkspace>({ id: "current", jobs: {}, uploadedReplyFiles: [], replyTrackingByOrder: {} });
+  const [activeSource, setActiveSource] = useState<TSource>("sabangnet");
+  const [restoring, setRestoring] = useState(true);
+  const job = workspace.jobs[activeSource] ?? null;
+  const localResult = workspace.result ?? null;
+  const sourceEntries = Object.entries(workspace.jobs) as Array<[TSource, TJobState]>;
+  const hasReplies = workspace.uploadedReplyFiles.length > 0 || Object.keys(workspace.replyTrackingByOrder).length > 0;
   const replyInputRef = useRef<HTMLInputElement | null>(null);
 
   // derived
@@ -185,15 +180,26 @@ export default function HomePage() {
 
   useEffect(() => {
     (async () => {
-      const saved = await loadJob();
-      if (saved) setJob(saved);
+      try {
+        let saved = await loadWorkspace();
+        if (!saved.result && Object.keys(saved.replyTrackingByOrder).length > 0) {
+          saved = matchWorkspace(saved, new Map());
+          await saveWorkspace(saved);
+        }
+        setWorkspace(saved);
+        if (!saved.jobs.sabangnet && saved.jobs.admin) setActiveSource("admin");
+      } catch (e) {
+        setError(getErrorMessage(e));
+      } finally {
+        setRestoring(false);
+      }
     })();
   }, []);
 
   const setBusy = (on: boolean, text = "") => setLoading({ on, text });
 
   // ✅ 각 단계 완료 여부 (= 다음 단계로 넘어갈 수 있는 조건)
-  const step1Done = !!job?.originalRows?.length;
+  const step1Done = sourceEntries.some(([, item]) => item.originalRows.length > 0);
   const step3Done = !!localResult;
 
   const goNext = () => setStep((s) => (s < 4 ? ((s + 1) as TStep) : s));
@@ -202,7 +208,7 @@ export default function HomePage() {
   // 현재 단계에서 "다음" 버튼 활성화 조건
   const nextEnabled =
     (step === 1 && step1Done) ||
-    (step === 2 && (aggregateRows.length > 0 || step2Done)) ||
+    (step === 2 && step1Done) ||
     (step === 3 && step3Done);
 
   /**
@@ -217,17 +223,15 @@ export default function HomePage() {
 
     try {
       setBusy(true, "작업 초기화 중...");
-      await clearJob();
+      await clearWorkspace();
 
-      setJob(null);
-      setLocalResult(null);
+      setWorkspace({ id: "current", jobs: {}, uploadedReplyFiles: [], replyTrackingByOrder: {} });
       setStep2Done(false);
       setAggregateCopied(false);
       setStep(1);
       setError("");
 
       // ✅ input에 남아있는 "선택된 파일명" 제거
-      if (originalInputRef.current) originalInputRef.current.value = "";
       if (replyInputRef.current) replyInputRef.current.value = "";
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "작업 초기화 중 오류가 발생했습니다.");
@@ -236,34 +240,35 @@ export default function HomePage() {
     }
   };
 
-  const onUploadOriginal = async (file: File | null) => {
-    if (!file) return;
-
+  const onUploadOriginal = async (file: File | null, source: TSource) => {
+    if (!file || hasReplies || loading.on || restoring) return;
     try {
       setError("");
       setBusy(true, "원본 엑셀 읽는 중...");
-
       const { headers, rows, rowNumbers, originalWorkbookBuffer } = await readExcelFile(file);
-
-      const next: TJobState = {
-        createdAt: new Date().toISOString(),
-        originalFileName: file.name,
-        originalHeaders: headers,
-        originalRowNumbers: rowNumbers,
-        originalRows: rows,
-        originalWorkbookBuffer,
-        uploadedReplyFiles: [],
+      if (!rows.length || rows.every((row) => !getOriginalOrderKey(row))) {
+        throw new Error("주문번호를 찾지 못했습니다. 원본 엑셀을 확인해주세요.");
+      }
+      if (isSabangnetHeaders(headers) !== (source === "sabangnet")) {
+        throw new Error(`${SOURCE_LABELS[source]} 업로드 칸과 파일 양식이 다릅니다. 올바른 칸에 넣어주세요.`);
+      }
+      if (workspace.jobs[source] && !confirm(`${SOURCE_LABELS[source]} 원본을 새 파일로 교체할까요?`)) return;
+      const next: TWorkspace = {
+        ...workspace,
+        jobs: { ...workspace.jobs, [source]: {
+          createdAt: new Date().toISOString(), originalFileName: file.name,
+          originalHeaders: headers, originalRowNumbers: rowNumbers,
+          originalRows: rows, originalWorkbookBuffer, uploadedReplyFiles: [],
+        } },
+        result: undefined,
       };
-
-      await saveJob(next);
-      setJob(next);
-
-      // ✅ 원본 바뀌면 이전 결과는 의미 없으므로 초기화
-      setLocalResult(null);
+      await saveWorkspace(next);
+      setWorkspace(next);
+      setActiveSource(source);
       setStep2Done(false);
       setAggregateCopied(false);
     } catch (e: unknown) {
-      setError(getErrorMessage(e) || "원본 엑셀 처리 중 오류가 발생했습니다.");
+      setError(getErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -300,7 +305,7 @@ export default function HomePage() {
         job.originalRows as TRow[],
       );
 
-      await downloadCjUploadsZip(groups);
+      await downloadCjUploadsZip(groups, undefined, SOURCE_LABELS[activeSource]);
 
       setStep2Done(true);
     } catch (e: unknown) {
@@ -324,7 +329,7 @@ export default function HomePage() {
         job.originalRows as TRow[],
       );
 
-      await downloadCjUploadsSingle(groups);
+      await downloadCjUploadsSingle(groups, SOURCE_LABELS[activeSource]);
 
       setStep2Done(true);
     } catch (e: unknown) {
@@ -337,7 +342,7 @@ export default function HomePage() {
   };
 
   const onUploadReplies = async (files: FileList | null) => {
-    if (!job) return;
+    if (!step1Done || loading.on) return;
     if (!files || files.length === 0) return;
 
     try {
@@ -346,7 +351,7 @@ export default function HomePage() {
       /**
        * ✅ 중복 파일(동일 fingerprint) 업로드 제외
        */
-      const existing = job.uploadedReplyFiles ?? [];
+      const existing = workspace.uploadedReplyFiles;
       const newFingerprints: TFileFingerprint[] = [];
       const accepted: File[] = [];
       const dupNames: string[] = [];
@@ -383,64 +388,18 @@ export default function HomePage() {
         setError(skipped.map((item) => `${item.sourceFileName}: ${item.reason}`).join("\n"));
       }
 
-      /**
-       * ✅ 서로 다른 파일에 동일 고객주문번호가 있으면 전체 업로드 차단
-       */
-      const duplicatedOrders = Array.from(orderFileMap.entries())
-        .filter(([, fileSet]) => fileSet.size >= 2)
-        .map(([orderNo, fileSet]) => ({
-          orderNo,
-          files: Array.from(fileSet),
-        }));
-
-      if (duplicatedOrders.length > 0) {
-        const messageLines = duplicatedOrders
-          .slice(0, 5)
-          .map((d) => `- ${d.orderNo} : ${d.files.join(", ")}`);
-
-        setError(
-          `CJ 회신 파일 오류: 서로 다른 파일에 같은 고객주문번호가 있습니다.\n\n` +
-            messageLines.join("\n"),
-        );
-
-        // ✅ 업로드를 막되, 파일선택 상태는 유지하되 로딩 상태는 반드시 해제
-        setBusy(false);
+      if (accepted.every((file) => skipped.some((item) => item.sourceFileName === file.name)) && map.size === 0) return;
+      // Preserve the existing rejection of ambiguous, overlapping reply files.
+      const blocked = new Set([...orderFileMap].filter(([, files]) => files.size > 1).map(([key]) => key));
+      if (blocked.size > 0) {
+        setError(`서로 다른 회신 파일에 같은 주문번호가 있습니다: ${[...blocked].slice(0, 5).join(", ")}. 중복 파일을 제외하고 다시 올려주세요.`);
         return;
       }
-
-      setBusy(true, "운송장번호 매핑 중...");
-      const { updatedHeaders, updatedRows, unmatched, duplicates } =
-        applyTracking(job.originalHeaders, job.originalRows as TRow[], map, {
-          fileName: job.originalFileName,
-          rowNumbers: job.originalRowNumbers,
-        });
-
-      const next: TJobState = {
-        ...job,
-        originalHeaders: updatedHeaders,
-        originalRows: updatedRows,
-        replyTrackingByOrder: {
-          ...job.replyTrackingByOrder,
-          ...Object.fromEntries(map),
-        },
-        uploadedReplyFiles: [...existing, ...newFingerprints],
-      };
-
-      await saveJob(next);
-      setJob(next);
-
-      const unmatchedReplyKeys = new Set(
-        unmatched
-          .filter((u) => u.source === "회신" && map.has(u.customerOrderNo))
-          .map((u) => u.customerOrderNo),
-      );
-
-      setLocalResult({
-        unmatched: [...unmatched, ...invalidReplies],
-        duplicates,
-        matchedCount: map.size - unmatchedReplyKeys.size,
-        totalReplyCount: map.size,
-      });
+      setBusy(true, "사방넷·어드민 운송장번호 매핑 중...");
+      const next = matchWorkspace(workspace, map, invalidReplies);
+      next.uploadedReplyFiles = [...existing, ...newFingerprints.filter((fp) => !skipped.some((item) => item.sourceFileName === fp.name))];
+      await saveWorkspace(next);
+      setWorkspace(next);
 
       setStep(4);
     } catch (e: unknown) {
@@ -450,7 +409,8 @@ export default function HomePage() {
     }
   };
 
-  const onDownloadFinal = async () => {
+  const onDownloadFinal = async (source: TSource) => {
+    const job = workspace.jobs[source];
     if (!job) return;
 
     try {
@@ -460,7 +420,7 @@ export default function HomePage() {
       await downloadOriginalWithTracking(
         job.originalHeaders,
         job.originalRows as TRow[],
-        job.originalFileName,
+        `${SOURCE_LABELS[source]}_${job.originalFileName}`,
         job.originalWorkbookBuffer,
         job.replyTrackingByOrder,
       );
@@ -493,7 +453,7 @@ export default function HomePage() {
 
   return (
     <div className={ui.page}>
-      <main className={`${ui.container} ${step === 4 ? "md:max-w-6xl" : ""}`}>
+      <main aria-busy={restoring} className={`${ui.container} ${step === 4 ? "md:max-w-6xl" : ""}`}>
         <header className="mb-6 flex items-center gap-3 border-b border-[#e5e8eb] pb-5">
           <div className="relative h-14 w-14 shrink-0 overflow-hidden mix-blend-multiply">
             <Image
@@ -516,7 +476,7 @@ export default function HomePage() {
           <button
             type="button"
             onClick={onReset}
-            disabled={loading.on}
+            disabled={loading.on || restoring}
             aria-label="모든 작업 초기화하고 처음부터 다시 시작"
             title="처음부터 다시"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-sm transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:bg-primary-muted disabled:text-primary-muted-foreground"
@@ -587,52 +547,35 @@ export default function HomePage() {
           {/* Step 1 */}
           {step === 1 && (
             <>
-              <label className={ui.dropzone}>
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-3xl">
-                  📄
-                </div>
-                <div className="text-[15px] font-bold text-[#191f28]">
-                  원본 엑셀 올리기
-                </div>
-                <div className="text-[13px] text-[#8b95a1]">
-                  .xlsx 파일을 선택하세요
-                </div>
-                <input
-                  ref={originalInputRef}
-                  type="file"
-                  accept=".xlsx"
-                  disabled={loading.on}
-                  className="hidden"
-                  onChange={(e) =>
-                    onUploadOriginal(e.target.files?.[0] ?? null)
-                  }
-                />
-              </label>
-
-              {job?.originalFileName && (
-                <div className="pop-in space-y-3">
-                  <div className="flex items-center gap-2.5 rounded-2xl bg-white p-4">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[13px] text-white">
-                      ✓
-                    </span>
-                    <span className="flex-1 truncate text-[15px] font-semibold text-[#191f28]">
-                      {job.originalFileName}
-                    </span>
-                  </div>
-                  <div className={ui.stat}>
-                    <div className={ui.statKey}>총 수량</div>
-                    <div className={ui.statVal}>
-                      {totalQuantity.toLocaleString()}개
-                    </div>
-                  </div>
-                </div>
-              )}
+              <p className={ui.hint}>사방넷과 어드민 파일을 각각 넣어주세요. 한쪽만 넣어도 진행할 수 있어요.</p>
+              {(["sabangnet", "admin"] as TSource[]).map((source) => (
+                <label key={source} className={`${ui.dropzone} ${hasReplies ? "opacity-60" : ""}`}>
+                  <span className={ui.listTitle}>{SOURCE_LABELS[source]} 원본 엑셀</span>
+                  <span className="max-w-full break-all text-[13px] text-[#6b7684]">
+                    {workspace.jobs[source]?.originalFileName ?? ".xlsx 파일을 선택하세요"}
+                  </span>
+                  {workspace.jobs[source] && <span className={ui.hint}>{workspace.jobs[source]!.originalRows.length.toLocaleString()}행 · 업로드 완료</span>}
+                  <input type="file" accept=".xlsx" className="hidden" disabled={loading.on || restoring || hasReplies}
+                    onChange={(e) => { const file = e.target.files?.[0] ?? null; e.target.value = ""; void onUploadOriginal(file, source); }} />
+                </label>
+              ))}
+              {hasReplies && <p className={ui.hint}>회신을 반영한 뒤에는 원본을 교체할 수 없어요. 새 작업은 상단 초기화 버튼으로 시작해주세요.</p>}
             </>
           )}
 
           {/* Step 2 */}
           {step === 2 && (
             <>
+              <div className="flex gap-2" aria-label="CJ 제출용 파일 출처 선택">
+                {sourceEntries.map(([source]) => (
+                  <button key={source} type="button" aria-pressed={activeSource === source}
+                    className={`flex-1 rounded-xl px-4 py-3 font-bold ${activeSource === source ? "bg-primary text-white" : "bg-white text-[#4e5968]"}`}
+                    onClick={() => { setActiveSource(source); setAggregateCopied(false); setStep2Done(false); }}>
+                    {SOURCE_LABELS[source]}
+                  </button>
+                ))}
+              </div>
+              <p className={ui.hint}>{SOURCE_LABELS[activeSource]} · {job?.originalFileName} · 총 수량 {totalQuantity.toLocaleString()}개</p>
               {jejuDelivery.hasJejuDelivery && (
                 <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-[15px] font-bold leading-relaxed text-amber-900">
                   ★ 주의하세요. 제주도 배송이 &apos;{jejuDelivery.totalBox.toLocaleString("ko-KR") }건&apos; 있습니다.
@@ -689,12 +632,12 @@ export default function HomePage() {
               <div className={ui.btnRow}>
                 <button
                   className={ui.listBtn}
-                  disabled={loading.on}
+                  disabled={loading.on || restoring}
                   onClick={onDownloadCjZip}
                 >
                   <span className={ui.listIcon}>🗂️</span>
                   <span className="flex-1">
-                    <span className={ui.listTitle}>CJ 업로드용 품목별 ZIP</span>
+                    <span className={ui.listTitle}>{SOURCE_LABELS[activeSource]} CJ 품목별 ZIP</span>
                     <span className={ui.listDesc}>품목별로 파일이 나뉨</span>
                   </span>
                   <span className="text-[#c4cad1]">›</span>
@@ -702,12 +645,12 @@ export default function HomePage() {
 
                 <button
                   className={ui.listBtn}
-                  disabled={loading.on}
+                  disabled={loading.on || restoring}
                   onClick={onDownloadCjSingle}
                 >
                   <span className={ui.listIcon}>📄</span>
                   <span className="flex-1">
-                    <span className={ui.listTitle}>CJ 업로드용 통합 엑셀</span>
+                    <span className={ui.listTitle}>{SOURCE_LABELS[activeSource]} CJ 통합 엑셀</span>
                     <span className={ui.listDesc}>하나의 파일로 합쳐짐</span>
                   </span>
                   <span className="text-[#c4cad1]">›</span>
@@ -741,16 +684,16 @@ export default function HomePage() {
                   CJ 회신 엑셀 올리기
                 </div>
                 <div className="text-[13px] text-[#8b95a1]">
-                  .xlsx 여러 개를 한 번에 선택할 수 있어요
+                  사방넷·어드민 CJ 회신을 한 번에 선택하세요
                 </div>
                 <input
                   ref={replyInputRef}
                   type="file"
                   accept=".xlsx"
                   multiple
-                  disabled={loading.on}
+                  disabled={loading.on || restoring}
                   className="hidden"
-                  onChange={(e) => onUploadReplies(e.target.files)}
+                  onChange={(e) => { void onUploadReplies(e.target.files); e.target.value = ""; }}
                 />
               </label>
 
@@ -759,6 +702,7 @@ export default function HomePage() {
                   • 같은 파일을 다시 올리면 경고 후 제외돼요.
                   <br />• 서로 다른 파일에 같은 고객주문번호가 있으면{" "}
                   <b className="text-[#4e5968]">전체 업로드가 차단</b>됩니다.
+                  <br />• 두 원본에 겹치는 주문번호는 자동 반영을 보류하고 미매칭 목록에 표시해요.
                 </p>
               </div>
 
@@ -779,8 +723,8 @@ export default function HomePage() {
               {localResult ? (
                 <div className={ui.statsGrid}>
                   <div className={ui.stat}>
-                    <div className={ui.statKey}>총 수량</div>
-                    <div className={ui.statVal}>{totalQuantity}</div>
+                    <div className={ui.statKey}>원본 총 행 수</div>
+                    <div className={ui.statVal}>{sourceEntries.reduce((sum, [, item]) => sum + item.originalRows.length, 0)}</div>
                   </div>
                   <div className={ui.stat}>
                     <div className={ui.statKey}>회신 키 수</div>
@@ -789,7 +733,7 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div className={ui.stat}>
-                    <div className={ui.statKey}>매핑 성공(추정)</div>
+                    <div className={ui.statKey}>매칭 주문번호</div>
                     <div className={`${ui.statVal} text-primary`}>
                       {localResult.matchedCount}
                     </div>
@@ -816,13 +760,15 @@ export default function HomePage() {
               )}
 
               <div className={ui.btnRow}>
-                <button
-                  className={ui.btnPrimary}
-                  disabled={!job || loading.on || !step3Done}
-                  onClick={onDownloadFinal}
-                >
-                  최종 원본 다운로드
-                </button>
+                {sourceEntries.map(([source, sourceJob]) => (
+                  <div key={source} className="space-y-2 rounded-2xl bg-white p-4">
+                    <p className={ui.listTitle}>{SOURCE_LABELS[source]}</p>
+                    <p className={ui.hint}>{sourceJob.originalFileName}</p>
+                    <p className={ui.hint}>매칭 {localResult?.sources[source]?.matchedCount ?? 0}건 · 미매칭 {localResult?.sources[source]?.unmatchedCount ?? 0}건</p>
+                    <button className={ui.btnPrimary} disabled={loading.on || !step3Done}
+                      onClick={() => onDownloadFinal(source)}>{SOURCE_LABELS[source]} 운송장 반영본 다운로드</button>
+                  </div>
+                ))}
 
                 <button
                   className={ui.btnSecondary}
@@ -953,7 +899,7 @@ export default function HomePage() {
               <button
                 type="button"
                 className={ui.ctaSecondary}
-                disabled={loading.on}
+                disabled={loading.on || restoring}
                 onClick={goPrev}
               >
                 이전

@@ -1,4 +1,6 @@
 import Dexie, { type Table } from "dexie";
+import type { TSource } from "@/lib/constants/sources";
+import type { TUnmatchedRow } from "@/lib/excel/unmatched";
 
 export type TOriginalRow = Record<string, unknown>;
 
@@ -32,14 +34,32 @@ export type TJobState = {
   uploadedReplyFiles?: TUploadedReplyFile[];
 };
 
+export { SOURCE_LABELS, type TSource } from "@/lib/constants/sources";
+
+export type TWorkspace = {
+  id: string;
+  jobs: Partial<Record<TSource, TJobState>>;
+  uploadedReplyFiles: TUploadedReplyFile[];
+  replyTrackingByOrder: Record<string, string[]>;
+  replyIssues?: TUnmatchedRow[];
+  result?: {
+    unmatched: TUnmatchedRow[];
+    duplicates: Array<{ key: string; count: number }>;
+    matchedCount: number;
+    totalReplyCount: number;
+    sources: Partial<Record<TSource, { matchedCount: number; unmatchedCount: number }>>;
+  };
+};
+
 class HansomDB extends Dexie {
   job!: Table<TJobState, string>;
 
+  workspace!: Table<TWorkspace, string>;
+
   constructor() {
     super("hansom-nuri-db");
-    this.version(1).stores({
-      job: "createdAt",
-    });
+    this.version(1).stores({ job: "createdAt" });
+    this.version(2).stores({ job: "createdAt", workspace: "id" });
   }
 }
 
@@ -57,4 +77,31 @@ export const loadJob = async (): Promise<TJobState | null> => {
 
 export const clearJob = async () => {
   await db.job.clear();
+};
+
+export const saveWorkspace = async (workspace: TWorkspace) => {
+  await db.workspace.put(workspace);
+};
+
+export const loadWorkspace = async (): Promise<TWorkspace> => {
+  const saved = await db.workspace.get("current");
+  if (saved) return saved;
+  const legacy = await loadJob();
+  const { isSabangnetHeaders } = await import("@/lib/excel/orderFormat");
+  const source: TSource = legacy && isSabangnetHeaders(legacy.originalHeaders) ? "sabangnet" : "admin";
+  const workspace: TWorkspace = {
+    id: "current",
+    jobs: legacy ? { [source]: legacy } : {},
+    uploadedReplyFiles: legacy?.uploadedReplyFiles ?? [],
+    replyTrackingByOrder: legacy?.replyTrackingByOrder ?? {},
+  };
+  await saveWorkspace(workspace);
+  return workspace;
+};
+
+export const clearWorkspace = async () => {
+  await db.transaction("rw", db.job, db.workspace, async () => {
+    await db.job.clear();
+    await db.workspace.clear();
+  });
 };
