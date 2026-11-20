@@ -698,41 +698,84 @@ test("workspace supports a single source, persists invalid replies, and rejects 
   assert.equal(second.result.unmatched.length, 1);
 });
 
-test("original upload identifies sources from headers rather than filenames and keeps both workbooks", async () => {
+test("original upload accepts any number of files and appends same-format jobs in selection order", async () => {
   const { readOriginalFiles } = load("src/lib/excel/readOriginals.ts");
-  const makeFile = async (name, headers, row) => {
+  const { getOriginalLabel } = load("src/lib/utils/originalLabel.ts");
+  const makeFile = async (name, key, headers = ["상품 주문번호", "품목명", "박스수량", "운송장번호"]) => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("원본");
     sheet.addRow(headers);
-    sheet.addRow(row);
+    sheet.addRow([key, "감귤", 1, ""]);
     return new File([await workbook.xlsx.writeBuffer()], name);
   };
-  const admin = await makeFile("사방넷.xlsx", ["상품 주문번호", "품목명", "박스수량", "운송장번호"], ["A1", "감귤", 1, ""]);
-  const sabang = await makeFile("어드민.xlsx", ["사방넷주문번호", "쇼핑몰명", "상품약어", "상품명", "★쇼핑몰 주문번호★", "송장번호"], ["S1", "몰", "감귤", "감귤", "M1", ""]);
-  for (const files of [[admin, sabang], [sabang, admin]]) {
-    const jobs = await readOriginalFiles(files);
-    assert.equal(jobs.admin.originalFileName, "사방넷.xlsx");
-    assert.equal(jobs.sabangnet.originalFileName, "어드민.xlsx");
-    assert.equal(jobs.admin.originalRows[0]["상품 주문번호"], "A1");
-    assert.ok(jobs.admin.originalWorkbookBuffer.byteLength > 0);
-    assert.ok(jobs.sabangnet.originalWorkbookBuffer.byteLength > 0);
-  }
-  assert.deepEqual(Object.keys(await readOriginalFiles([admin])), ["admin"]);
-  await assert.rejects(readOriginalFiles([admin, admin]), /어드민 파일이 두 개/);
-  const unknown = await makeFile("주문.xlsx", ["상품명", "수량"], ["감귤", 1]);
-  await assert.rejects(readOriginalFiles([admin, unknown]), /양식을 구분하지 못했습니다/);
-  const empty = await makeFile("빈 주문.xlsx", ["품목명", "상품주문번호"], ["감귤", ""]);
+  const files = await Promise.all([makeFile("임의이름.xlsx", "A"), makeFile("주문서.xlsx", "B"), makeFile("일반.xlsx", "C")]);
+  const jobs = await readOriginalFiles(files);
+  assert.deepEqual(Object.keys(jobs), ["original-1", "original-2", "original-3"]);
+  assert.deepEqual(Object.values(jobs).map((job) => job.originalFileName), files.map((file) => file.name));
+  assert.deepEqual(Object.keys(jobs).map((_, index) => getOriginalLabel(index)), ["첫 번째 엑셀", "두 번째 엑셀", "세 번째 엑셀"]);
+  for (const job of Object.values(jobs)) assert.ok(job.originalWorkbookBuffer.byteLength > 0);
+  assert.equal(getOriginalLabel(10), "11번째 엑셀");
+  const fourth = await makeFile("추가.xlsx", "D");
+  const extra = await readOriginalFiles([fourth], jobs);
+  assert.deepEqual(Object.keys(extra), ["original-4"]);
+  assert.equal(Object.keys(jobs).length, 3);
+  assert.deepEqual(Object.keys(await readOriginalFiles([files[0]])), ["original-1"]);
+  await assert.rejects(readOriginalFiles([files[0], files[0]]), /이미 선택하거나 업로드한/);
+  await assert.rejects(readOriginalFiles([files[0]], jobs), /이미 선택하거나 업로드한/);
+  const invalid = await makeFile("안내.xlsx", "Z", ["메모"]);
+  await assert.rejects(readOriginalFiles([fourth, invalid], jobs), /품목명 또는 상품명/);
+  assert.equal(Object.keys(jobs).length, 3);
+  const empty = await makeFile("빈 주문.xlsx", "");
   await assert.rejects(readOriginalFiles([empty]), /주문번호를 찾지 못했습니다/);
-  await assert.rejects(readOriginalFiles([admin, sabang, unknown]), /최대 두 개/);
 });
 
-test("source detection rejects CJ files and incomplete Sabangnet headers instead of assuming admin", () => {
-  const { detectOrderSource } = load("src/lib/excel/orderFormat.ts");
-  const { CJ_UPLOAD_HEADERS } = load("src/lib/constants/excel.ts");
-  assert.equal(detectOrderSource([...CJ_UPLOAD_HEADERS]), null);
-  assert.equal(detectOrderSource(["고객주문번호", "운송장번호"]), null);
-  assert.equal(detectOrderSource(["품목명", "상품주문번호", "사방넷 주문번호"]), null);
-  assert.equal(detectOrderSource(["품목명", "고객 주문번호", "운송장번호"]), "admin");
-  assert.equal(detectOrderSource(["품목명", "상품주문번호", "쇼핑몰명"]), "admin");
-  assert.equal(detectOrderSource(["메모"]), null);
+test("three originals route mixed reply files independently and hold orders shared by all three", async () => {
+  const { readOriginalFiles } = load("src/lib/excel/readOriginals.ts");
+  const { readCjReplyFiles } = load("src/lib/excel/readCJReply.ts");
+  const { matchWorkspace } = load("src/lib/excel/matchWorkspace.ts");
+  const originalFiles = [];
+  const replyFiles = [];
+  for (let index = 1; index <= 3; index++) {
+    const original = new ExcelJS.Workbook();
+    const sheet = original.addWorksheet("원본");
+    sheet.addRow(["상품주문번호", "품목명", "박스수량", "운송장번호"]);
+    sheet.addRow([`A${index}`, "감귤", 1, ""]);
+    sheet.addRow(["SHARED", "감귤", 1, ""]);
+    originalFiles.push(new File([await original.xlsx.writeBuffer()], `원본${index}.xlsx`));
+    const reply = new ExcelJS.Workbook();
+    const replySheet = reply.addWorksheet("회신");
+    replySheet.addRow(["고객주문번호", "운송장번호"]);
+    replySheet.addRow([`A${index}`, `00${index}`]);
+    replySheet.addRow(["SHARED", `99${index}`]);
+    replyFiles.push(new File([await reply.xlsx.writeBuffer()], `회신${index}.xlsx`));
+  }
+  const jobs = await readOriginalFiles(originalFiles);
+  const reply = await readCjReplyFiles(replyFiles);
+  const workspace = { id: "current", jobs, uploadedReplyFiles: [], replyTrackingByOrder: {} };
+  const matched = matchWorkspace(workspace, reply.map);
+  assert.equal(matched.result.matchedCount, 3);
+  assert.equal(matched.result.totalReplyCount, 4);
+  for (let index = 1; index <= 3; index++) {
+    const id = `original-${index}`;
+    assert.equal(matched.jobs[id].originalRows[0].운송장번호, `00${index}`);
+    assert.equal(matched.jobs[id].originalRows[1].운송장번호, "");
+    assert.deepEqual(matched.result.sources[id], { matchedCount: 1, unmatchedCount: 1 });
+  }
+  assert.equal(matched.result.unmatched.filter((row) => row.source === "원본" && row.reason.includes("보류")).length, 3);
+  assert.ok(matched.result.unmatched.some((row) => row.sourceFileName === "세 번째 엑셀 / 원본3.xlsx"));
+  const { downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  downloads = [];
+  for (const job of Object.values(matched.jobs)) {
+    await downloadOriginalWithTracking(job.originalHeaders, job.originalRows, job.originalFileName, job.originalWorkbookBuffer, job.replyTrackingByOrder);
+  }
+  assert.equal(downloads.length, 3);
+  for (let index = 0; index < downloads.length; index++) {
+    const exported = new ExcelJS.Workbook();
+    await exported.xlsx.load(await downloads[index].blob.arrayBuffer());
+    assert.equal(exported.worksheets[0].getCell("D2").value, `00${index + 1}`);
+    assert.equal(exported.worksheets[0].getCell("D3").value, "");
+  }
+  const restored = matchWorkspace(structuredClone(matched), new Map());
+  assert.deepEqual(Object.keys(restored.jobs), Object.keys(jobs));
+  assert.equal(restored.result.matchedCount, 3);
 });

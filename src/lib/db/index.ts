@@ -1,5 +1,4 @@
 import Dexie, { type Table } from "dexie";
-import type { TSource } from "@/lib/constants/sources";
 import type { TUnmatchedRow } from "@/lib/excel/unmatched";
 
 export type TOriginalRow = Record<string, unknown>;
@@ -19,6 +18,7 @@ export type TUploadedReplyFile = {
 export type TJobState = {
   createdAt: string; // ISO
   originalFileName: string;
+  originalFingerprint?: TUploadedReplyFile;
 
   // 원본 전체 row를 저장 (새로고침 대비)
   originalRows: TOriginalRow[];
@@ -34,11 +34,9 @@ export type TJobState = {
   uploadedReplyFiles?: TUploadedReplyFile[];
 };
 
-export { SOURCE_LABELS, type TSource } from "@/lib/constants/sources";
-
 export type TWorkspace = {
   id: string;
-  jobs: Partial<Record<TSource, TJobState>>;
+  jobs: Record<string, TJobState>;
   uploadedReplyFiles: TUploadedReplyFile[];
   replyTrackingByOrder: Record<string, string[]>;
   replyIssues?: TUnmatchedRow[];
@@ -47,7 +45,7 @@ export type TWorkspace = {
     duplicates: Array<{ key: string; count: number }>;
     matchedCount: number;
     totalReplyCount: number;
-    sources: Partial<Record<TSource, { matchedCount: number; unmatchedCount: number }>>;
+    sources: Record<string, { matchedCount: number; unmatchedCount: number }>;
   };
 };
 
@@ -87,11 +85,9 @@ export const loadWorkspace = async (): Promise<TWorkspace> => {
   const saved = await db.workspace.get("current");
   if (saved) return saved;
   const legacy = await loadJob();
-  const { isSabangnetHeaders } = await import("@/lib/excel/orderFormat");
-  const source: TSource = legacy && isSabangnetHeaders(legacy.originalHeaders) ? "sabangnet" : "admin";
   const workspace: TWorkspace = {
     id: "current",
-    jobs: legacy ? { [source]: legacy } : {},
+    jobs: legacy ? { "original-1": legacy } : {},
     uploadedReplyFiles: legacy?.uploadedReplyFiles ?? [],
     replyTrackingByOrder: legacy?.replyTrackingByOrder ?? {},
   };

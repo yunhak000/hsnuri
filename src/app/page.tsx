@@ -17,7 +17,8 @@ import {
   downloadOriginalWithTracking,
   downloadUnmatchedExcel,
 } from "@/lib/excel/applyTrackingToOriginal";
-import { clearWorkspace, loadWorkspace, saveWorkspace, SOURCE_LABELS, type TSource, type TWorkspace, type TJobState } from "@/lib/db";
+import { clearWorkspace, loadWorkspace, saveWorkspace, type TWorkspace } from "@/lib/db";
+import { getOriginalLabel } from "@/lib/utils/originalLabel";
 import { matchWorkspace } from "@/lib/excel/matchWorkspace";
 import {
   fingerprintFile,
@@ -115,11 +116,12 @@ export default function HomePage() {
   const [error, setError] = useState<string>("");
 
   const [workspace, setWorkspace] = useState<TWorkspace>({ id: "current", jobs: {}, uploadedReplyFiles: [], replyTrackingByOrder: {} });
-  const [activeSource, setActiveSource] = useState<TSource>("sabangnet");
+  const [activeSource, setActiveSource] = useState<string>("");
   const [restoring, setRestoring] = useState(true);
   const job = workspace.jobs[activeSource] ?? null;
   const localResult = workspace.result ?? null;
-  const sourceEntries = Object.entries(workspace.jobs) as Array<[TSource, TJobState]>;
+  const sourceEntries = Object.entries(workspace.jobs);
+  const originalLabel = (id: string) => getOriginalLabel(sourceEntries.findIndex(([key]) => key === id));
   const hasReplies = workspace.uploadedReplyFiles.length > 0 || Object.keys(workspace.replyTrackingByOrder).length > 0;
   const replyInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -180,12 +182,12 @@ export default function HomePage() {
     (async () => {
       try {
         let saved = await loadWorkspace();
-        if (!saved.result && Object.keys(saved.replyTrackingByOrder).length > 0) {
+        if (saved.result || Object.keys(saved.replyTrackingByOrder).length > 0) {
           saved = matchWorkspace(saved, new Map());
           await saveWorkspace(saved);
         }
         setWorkspace(saved);
-        if (!saved.jobs.sabangnet && saved.jobs.admin) setActiveSource("admin");
+        setActiveSource(Object.keys(saved.jobs)[0] ?? "");
       } catch (e) {
         setError(getErrorMessage(e));
       } finally {
@@ -242,11 +244,9 @@ export default function HomePage() {
     if (!files.length || hasReplies || loading.on || restoring) return;
     try {
       setError("");
-      setBusy(true, "원본 엑셀 읽고 사방넷·어드민 구분 중...");
-      const incoming = await readOriginalFiles(files);
-      const sources = Object.keys(incoming) as TSource[];
-      const replacing = sources.filter((source) => workspace.jobs[source]);
-      if (replacing.length && !confirm(`${replacing.map((source) => SOURCE_LABELS[source]).join("·")} 원본을 새 파일로 교체할까요?`)) return;
+      setBusy(true, "원본 엑셀 읽는 중...");
+      const incoming = await readOriginalFiles(files, workspace.jobs);
+      const sources = Object.keys(incoming);
       const next: TWorkspace = {
         ...workspace,
         jobs: { ...workspace.jobs, ...incoming },
@@ -295,7 +295,7 @@ export default function HomePage() {
         job.originalRows as TRow[],
       );
 
-      await downloadCjUploadsZip(groups, undefined, SOURCE_LABELS[activeSource]);
+      await downloadCjUploadsZip(groups, undefined, originalLabel(activeSource));
 
       setStep2Done(true);
     } catch (e: unknown) {
@@ -319,7 +319,7 @@ export default function HomePage() {
         job.originalRows as TRow[],
       );
 
-      await downloadCjUploadsSingle(groups, SOURCE_LABELS[activeSource]);
+      await downloadCjUploadsSingle(groups, originalLabel(activeSource));
 
       setStep2Done(true);
     } catch (e: unknown) {
@@ -373,19 +373,13 @@ export default function HomePage() {
       }
 
       setBusy(true, "CJ 회신 파일 읽는 중...");
-      const { map, orderFileMap, unmatched: invalidReplies, skipped } = await readCjReplyFiles(accepted);
+      const { map, unmatched: invalidReplies, skipped } = await readCjReplyFiles(accepted);
       if (skipped.length > 0) {
         setError(skipped.map((item) => `${item.sourceFileName}: ${item.reason}`).join("\n"));
       }
 
       if (accepted.every((file) => skipped.some((item) => item.sourceFileName === file.name)) && map.size === 0) return;
-      // Preserve the existing rejection of ambiguous, overlapping reply files.
-      const blocked = new Set([...orderFileMap].filter(([, files]) => files.size > 1).map(([key]) => key));
-      if (blocked.size > 0) {
-        setError(`서로 다른 회신 파일에 같은 주문번호가 있습니다: ${[...blocked].slice(0, 5).join(", ")}. 중복 파일을 제외하고 다시 올려주세요.`);
-        return;
-      }
-      setBusy(true, "사방넷·어드민 운송장번호 매핑 중...");
+      setBusy(true, "원본별 운송장번호 매핑 중...");
       const next = matchWorkspace(workspace, map, invalidReplies);
       next.uploadedReplyFiles = [...existing, ...newFingerprints.filter((fp) => !skipped.some((item) => item.sourceFileName === fp.name))];
       await saveWorkspace(next);
@@ -399,7 +393,7 @@ export default function HomePage() {
     }
   };
 
-  const onDownloadFinal = async (source: TSource) => {
+  const onDownloadFinal = async (source: string) => {
     const job = workspace.jobs[source];
     if (!job) return;
 
@@ -410,7 +404,7 @@ export default function HomePage() {
       await downloadOriginalWithTracking(
         job.originalHeaders,
         job.originalRows as TRow[],
-        `${SOURCE_LABELS[source]}_${job.originalFileName}`,
+        `${originalLabel(source)}_${job.originalFileName}`,
         job.originalWorkbookBuffer,
         job.replyTrackingByOrder,
       );
@@ -537,37 +531,37 @@ export default function HomePage() {
           {/* Step 1 */}
           {step === 1 && (
             <>
-              <p className={ui.hint}>파일 두 개를 한 번에 선택하면 사방넷·어드민을 자동으로 구분해요. 한 개씩 추가해도 돼요.</p>
+              <p className={ui.hint}>원본 엑셀을 여러 개 선택하세요. 올린 순서대로 첫 번째·두 번째·세 번째 엑셀로 관리해요. 한 개만 올려도 돼요.</p>
               <label className={`${ui.dropzone} ${hasReplies ? "opacity-60" : ""}`}>
                 <span className={ui.listTitle}>원본 엑셀 올리기</span>
-                <span className={ui.hint}>사방넷·어드민 .xlsx 파일을 함께 선택하세요</span>
+                <span className={ui.hint}>.xlsx 파일을 함께 선택하거나 나중에 추가하세요</span>
                 <input type="file" accept=".xlsx" multiple className="hidden" disabled={loading.on || restoring || hasReplies}
                   onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void onUploadOriginals(files); }} />
               </label>
               {sourceEntries.map(([source, sourceJob]) => (
                 <div key={source} className="space-y-1 rounded-2xl bg-white p-4" role="status">
-                  <p className={ui.listTitle}>{SOURCE_LABELS[source]} · 자동 구분 완료</p>
+                  <p className={ui.listTitle}>{originalLabel(source)}</p>
                   <p className="break-all text-[13px] text-[#6b7684]">{sourceJob.originalFileName}</p>
                   <p className={ui.hint}>{sourceJob.originalRows.length.toLocaleString()}행 · 업로드 완료</p>
                 </div>
               ))}
-              {hasReplies && <p className={ui.hint}>회신을 반영한 뒤에는 원본을 교체할 수 없어요. 새 작업은 상단 초기화 버튼으로 시작해주세요.</p>}
+              {hasReplies && <p className={ui.hint}>회신을 반영한 뒤에는 원본을 추가할 수 없어요. 새 작업은 상단 초기화 버튼으로 시작해주세요.</p>}
             </>
           )}
 
           {/* Step 2 */}
           {step === 2 && (
             <>
-              <div className="flex gap-2" aria-label="CJ 제출용 파일 출처 선택">
+              <div className="flex flex-wrap gap-2" aria-label="CJ 제출용 원본 엑셀 선택">
                 {sourceEntries.map(([source]) => (
                   <button key={source} type="button" aria-pressed={activeSource === source}
                     className={`flex-1 rounded-xl px-4 py-3 font-bold ${activeSource === source ? "bg-primary text-white" : "bg-white text-[#4e5968]"}`}
                     onClick={() => { setActiveSource(source); setAggregateCopied(false); setStep2Done(false); }}>
-                    {SOURCE_LABELS[source]}
+                    {originalLabel(source)}
                   </button>
                 ))}
               </div>
-              <p className={ui.hint}>{SOURCE_LABELS[activeSource]} · {job?.originalFileName} · 총 수량 {totalQuantity.toLocaleString()}개</p>
+              <p className={ui.hint}>{originalLabel(activeSource)} · {job?.originalFileName} · 총 수량 {totalQuantity.toLocaleString()}개</p>
               {jejuDelivery.hasJejuDelivery && (
                 <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-[15px] font-bold leading-relaxed text-amber-900">
                   ★ 주의하세요. 제주도 배송이 &apos;{jejuDelivery.totalBox.toLocaleString("ko-KR") }건&apos; 있습니다.
@@ -629,7 +623,7 @@ export default function HomePage() {
                 >
                   <span className={ui.listIcon}>🗂️</span>
                   <span className="flex-1">
-                    <span className={ui.listTitle}>{SOURCE_LABELS[activeSource]} CJ 품목별 ZIP</span>
+                    <span className={ui.listTitle}>{originalLabel(activeSource)} CJ 품목별 ZIP</span>
                     <span className={ui.listDesc}>품목별로 파일이 나뉨</span>
                   </span>
                   <span className="text-[#c4cad1]">›</span>
@@ -642,7 +636,7 @@ export default function HomePage() {
                 >
                   <span className={ui.listIcon}>📄</span>
                   <span className="flex-1">
-                    <span className={ui.listTitle}>{SOURCE_LABELS[activeSource]} CJ 통합 엑셀</span>
+                    <span className={ui.listTitle}>{originalLabel(activeSource)} CJ 통합 엑셀</span>
                     <span className={ui.listDesc}>하나의 파일로 합쳐짐</span>
                   </span>
                   <span className="text-[#c4cad1]">›</span>
@@ -676,7 +670,7 @@ export default function HomePage() {
                   CJ 회신 엑셀 올리기
                 </div>
                 <div className="text-[13px] text-[#8b95a1]">
-                  사방넷·어드민 CJ 회신을 한 번에 선택하세요
+                  모든 원본의 CJ 회신을 한 번에 선택하세요
                 </div>
                 <input
                   ref={replyInputRef}
@@ -692,9 +686,8 @@ export default function HomePage() {
               <div className="rounded-2xl bg-white p-4">
                 <p className={ui.hint}>
                   • 같은 파일을 다시 올리면 경고 후 제외돼요.
-                  <br />• 서로 다른 파일에 같은 고객주문번호가 있으면{" "}
-                  <b className="text-[#4e5968]">전체 업로드가 차단</b>됩니다.
-                  <br />• 두 원본에 겹치는 주문번호는 자동 반영을 보류하고 미매칭 목록에 표시해요.
+                  <br />• 같은 주문번호의 운송장은 중복을 제외하고 모아 반영해요.
+                  <br />• 여러 원본에 겹치는 주문번호는 자동 반영을 보류하고 미매칭 목록에 표시해요.
                 </p>
               </div>
 
@@ -754,11 +747,11 @@ export default function HomePage() {
               <div className={ui.btnRow}>
                 {sourceEntries.map(([source, sourceJob]) => (
                   <div key={source} className="space-y-2 rounded-2xl bg-white p-4">
-                    <p className={ui.listTitle}>{SOURCE_LABELS[source]}</p>
+                    <p className={ui.listTitle}>{originalLabel(source)}</p>
                     <p className={ui.hint}>{sourceJob.originalFileName}</p>
                     <p className={ui.hint}>매칭 {localResult?.sources[source]?.matchedCount ?? 0}건 · 미매칭 {localResult?.sources[source]?.unmatchedCount ?? 0}건</p>
                     <button className={ui.btnPrimary} disabled={loading.on || !step3Done}
-                      onClick={() => onDownloadFinal(source)}>{SOURCE_LABELS[source]} 운송장 반영본 다운로드</button>
+                      onClick={() => onDownloadFinal(source)}>{originalLabel(source)} 운송장 반영본 다운로드</button>
                   </div>
                 ))}
 
