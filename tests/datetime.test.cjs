@@ -697,3 +697,42 @@ test("workspace supports a single source, persists invalid replies, and rejects 
   assert.deepEqual(second.replyIssues, [issue]);
   assert.equal(second.result.unmatched.length, 1);
 });
+
+test("original upload identifies sources from headers rather than filenames and keeps both workbooks", async () => {
+  const { readOriginalFiles } = load("src/lib/excel/readOriginals.ts");
+  const makeFile = async (name, headers, row) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("원본");
+    sheet.addRow(headers);
+    sheet.addRow(row);
+    return new File([await workbook.xlsx.writeBuffer()], name);
+  };
+  const admin = await makeFile("사방넷.xlsx", ["상품 주문번호", "품목명", "박스수량", "운송장번호"], ["A1", "감귤", 1, ""]);
+  const sabang = await makeFile("어드민.xlsx", ["사방넷주문번호", "쇼핑몰명", "상품약어", "상품명", "★쇼핑몰 주문번호★", "송장번호"], ["S1", "몰", "감귤", "감귤", "M1", ""]);
+  for (const files of [[admin, sabang], [sabang, admin]]) {
+    const jobs = await readOriginalFiles(files);
+    assert.equal(jobs.admin.originalFileName, "사방넷.xlsx");
+    assert.equal(jobs.sabangnet.originalFileName, "어드민.xlsx");
+    assert.equal(jobs.admin.originalRows[0]["상품 주문번호"], "A1");
+    assert.ok(jobs.admin.originalWorkbookBuffer.byteLength > 0);
+    assert.ok(jobs.sabangnet.originalWorkbookBuffer.byteLength > 0);
+  }
+  assert.deepEqual(Object.keys(await readOriginalFiles([admin])), ["admin"]);
+  await assert.rejects(readOriginalFiles([admin, admin]), /어드민 파일이 두 개/);
+  const unknown = await makeFile("주문.xlsx", ["상품명", "수량"], ["감귤", 1]);
+  await assert.rejects(readOriginalFiles([admin, unknown]), /양식을 구분하지 못했습니다/);
+  const empty = await makeFile("빈 주문.xlsx", ["품목명", "상품주문번호"], ["감귤", ""]);
+  await assert.rejects(readOriginalFiles([empty]), /주문번호를 찾지 못했습니다/);
+  await assert.rejects(readOriginalFiles([admin, sabang, unknown]), /최대 두 개/);
+});
+
+test("source detection rejects CJ files and incomplete Sabangnet headers instead of assuming admin", () => {
+  const { detectOrderSource } = load("src/lib/excel/orderFormat.ts");
+  const { CJ_UPLOAD_HEADERS } = load("src/lib/constants/excel.ts");
+  assert.equal(detectOrderSource([...CJ_UPLOAD_HEADERS]), null);
+  assert.equal(detectOrderSource(["고객주문번호", "운송장번호"]), null);
+  assert.equal(detectOrderSource(["품목명", "상품주문번호", "사방넷 주문번호"]), null);
+  assert.equal(detectOrderSource(["품목명", "고객 주문번호", "운송장번호"]), "admin");
+  assert.equal(detectOrderSource(["품목명", "상품주문번호", "쇼핑몰명"]), "admin");
+  assert.equal(detectOrderSource(["메모"]), null);
+});

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { readExcelFile } from "@/lib/excel/read";
+import { readOriginalFiles } from "@/lib/excel/readOriginals";
 import {
   buildAggregateRows,
   type TAggregateRow,
@@ -19,8 +19,6 @@ import {
 } from "@/lib/excel/applyTrackingToOriginal";
 import { clearWorkspace, loadWorkspace, saveWorkspace, SOURCE_LABELS, type TSource, type TWorkspace, type TJobState } from "@/lib/db";
 import { matchWorkspace } from "@/lib/excel/matchWorkspace";
-import { isSabangnetHeaders } from "@/lib/excel/orderFormat";
-import { getOriginalOrderKey } from "@/lib/utils/orderKey";
 import {
   fingerprintFile,
   isSameFingerprint,
@@ -240,31 +238,23 @@ export default function HomePage() {
     }
   };
 
-  const onUploadOriginal = async (file: File | null, source: TSource) => {
-    if (!file || hasReplies || loading.on || restoring) return;
+  const onUploadOriginals = async (files: File[]) => {
+    if (!files.length || hasReplies || loading.on || restoring) return;
     try {
       setError("");
-      setBusy(true, "원본 엑셀 읽는 중...");
-      const { headers, rows, rowNumbers, originalWorkbookBuffer } = await readExcelFile(file);
-      if (!rows.length || rows.every((row) => !getOriginalOrderKey(row))) {
-        throw new Error("주문번호를 찾지 못했습니다. 원본 엑셀을 확인해주세요.");
-      }
-      if (isSabangnetHeaders(headers) !== (source === "sabangnet")) {
-        throw new Error(`${SOURCE_LABELS[source]} 업로드 칸과 파일 양식이 다릅니다. 올바른 칸에 넣어주세요.`);
-      }
-      if (workspace.jobs[source] && !confirm(`${SOURCE_LABELS[source]} 원본을 새 파일로 교체할까요?`)) return;
+      setBusy(true, "원본 엑셀 읽고 사방넷·어드민 구분 중...");
+      const incoming = await readOriginalFiles(files);
+      const sources = Object.keys(incoming) as TSource[];
+      const replacing = sources.filter((source) => workspace.jobs[source]);
+      if (replacing.length && !confirm(`${replacing.map((source) => SOURCE_LABELS[source]).join("·")} 원본을 새 파일로 교체할까요?`)) return;
       const next: TWorkspace = {
         ...workspace,
-        jobs: { ...workspace.jobs, [source]: {
-          createdAt: new Date().toISOString(), originalFileName: file.name,
-          originalHeaders: headers, originalRowNumbers: rowNumbers,
-          originalRows: rows, originalWorkbookBuffer, uploadedReplyFiles: [],
-        } },
+        jobs: { ...workspace.jobs, ...incoming },
         result: undefined,
       };
       await saveWorkspace(next);
       setWorkspace(next);
-      setActiveSource(source);
+      setActiveSource(sources[0]);
       setStep2Done(false);
       setAggregateCopied(false);
     } catch (e: unknown) {
@@ -547,17 +537,19 @@ export default function HomePage() {
           {/* Step 1 */}
           {step === 1 && (
             <>
-              <p className={ui.hint}>사방넷과 어드민 파일을 각각 넣어주세요. 한쪽만 넣어도 진행할 수 있어요.</p>
-              {(["sabangnet", "admin"] as TSource[]).map((source) => (
-                <label key={source} className={`${ui.dropzone} ${hasReplies ? "opacity-60" : ""}`}>
-                  <span className={ui.listTitle}>{SOURCE_LABELS[source]} 원본 엑셀</span>
-                  <span className="max-w-full break-all text-[13px] text-[#6b7684]">
-                    {workspace.jobs[source]?.originalFileName ?? ".xlsx 파일을 선택하세요"}
-                  </span>
-                  {workspace.jobs[source] && <span className={ui.hint}>{workspace.jobs[source]!.originalRows.length.toLocaleString()}행 · 업로드 완료</span>}
-                  <input type="file" accept=".xlsx" className="hidden" disabled={loading.on || restoring || hasReplies}
-                    onChange={(e) => { const file = e.target.files?.[0] ?? null; e.target.value = ""; void onUploadOriginal(file, source); }} />
-                </label>
+              <p className={ui.hint}>파일 두 개를 한 번에 선택하면 사방넷·어드민을 자동으로 구분해요. 한 개씩 추가해도 돼요.</p>
+              <label className={`${ui.dropzone} ${hasReplies ? "opacity-60" : ""}`}>
+                <span className={ui.listTitle}>원본 엑셀 올리기</span>
+                <span className={ui.hint}>사방넷·어드민 .xlsx 파일을 함께 선택하세요</span>
+                <input type="file" accept=".xlsx" multiple className="hidden" disabled={loading.on || restoring || hasReplies}
+                  onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void onUploadOriginals(files); }} />
+              </label>
+              {sourceEntries.map(([source, sourceJob]) => (
+                <div key={source} className="space-y-1 rounded-2xl bg-white p-4" role="status">
+                  <p className={ui.listTitle}>{SOURCE_LABELS[source]} · 자동 구분 완료</p>
+                  <p className="break-all text-[13px] text-[#6b7684]">{sourceJob.originalFileName}</p>
+                  <p className={ui.hint}>{sourceJob.originalRows.length.toLocaleString()}행 · 업로드 완료</p>
+                </div>
               ))}
               {hasReplies && <p className={ui.hint}>회신을 반영한 뒤에는 원본을 교체할 수 없어요. 새 작업은 상단 초기화 버튼으로 시작해주세요.</p>}
             </>
