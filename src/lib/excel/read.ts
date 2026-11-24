@@ -12,6 +12,7 @@ export type TReadExcelResult = {
   rows: TExcelRow[];
   rowNumbers: number[];
   originalWorkbookBuffer?: ArrayBuffer;
+  suplinSheetName?: string;
 };
 
 const readHeaders = (worksheet: ExcelJS.Worksheet) => {
@@ -49,7 +50,12 @@ export const readExcelFile = async (file: File): Promise<TReadExcelResult> => {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
 
-  const worksheet = pickWorksheet(workbook);
+  const suplinSheet = workbook.getWorksheet("수플린")
+    ?? workbook.worksheets.find((sheet) => sheet.name.includes("수플린"));
+  if (!suplinSheet && file.name.includes("수플린")) {
+    throw new Error(`${file.name}: 이름에 '수플린'이 들어간 시트를 찾지 못했습니다.`);
+  }
+  const worksheet = suplinSheet ?? pickWorksheet(workbook);
   if (!worksheet) {
     throw new Error("엑셀 시트를 찾을 수 없습니다.");
   }
@@ -78,5 +84,6 @@ export const readExcelFile = async (file: File): Promise<TReadExcelResult> => {
     rows,
     rowNumbers,
     originalWorkbookBuffer: buffer,
+    suplinSheetName: suplinSheet?.name,
   };
 };

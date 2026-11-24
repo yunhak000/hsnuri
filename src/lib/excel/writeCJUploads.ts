@@ -178,9 +178,8 @@ export const buildCjGroupedRows = (originalHeaders: string[], originalRows: TRow
  * ✅ 엑셀 워크북 생성
  * ===============================
  */
-const makeCjWorkbookBuffer = async (rows: TRow[]) => {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Sheet1");
+const addCjWorksheet = (workbook: ExcelJS.Workbook, name: string, rows: TRow[]) => {
+  const ws = workbook.addWorksheet(name);
 
   ws.columns = CJ_UPLOAD_HEADERS.map((h) => ({
     header: h,
@@ -197,8 +196,6 @@ const makeCjWorkbookBuffer = async (rows: TRow[]) => {
   }
 
   ws.getRow(1).font = { bold: true };
-
-  return wb.xlsx.writeBuffer();
 };
 
 /**
@@ -206,7 +203,7 @@ const makeCjWorkbookBuffer = async (rows: TRow[]) => {
  * ✅ ZIP 다운로드
  * ===============================
  */
-export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgress?: (done: number, total: number) => void, sourceLabel?: string) => {
+export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgress?: (done: number, total: number) => void) => {
   const zip = new JSZip();
   const entries = Array.from(groups.entries());
   const total = entries.length;
@@ -215,7 +212,9 @@ export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgre
   let done = 0;
 
   for (const [itemName, rows] of entries) {
-    const buf = await makeCjWorkbookBuffer(rows);
+    const workbook = new ExcelJS.Workbook();
+    addCjWorksheet(workbook, "Sheet1", rows);
+    const buf = await workbook.xlsx.writeBuffer();
 
     const baseSafe = sanitizeFileName(itemName, "품목");
     const count = (usedNames.get(baseSafe) ?? 0) + 1;
@@ -230,22 +229,38 @@ export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgre
   }
 
   const zipBlob = await zip.generateAsync({ type: "blob" });
-  saveAs(zipBlob, makeDatedFileName(`${sourceLabel ? `${sourceLabel}_` : ""}한섬누리_CJ제출용_품목별엑셀.zip`));
+  saveAs(zipBlob, makeDatedFileName("한섬누리_CJ제출용_품목별엑셀.zip"));
 };
 
-/**
- * ===============================
- * ✅ 단일 엑셀 다운로드
- * - 품목별로 나누지 않고, 모든 그룹의 행을 하나의 시트에 합쳐서 출력
- * - CJ 매핑 로직(buildCjGroupedRows 결과)은 그대로 재사용
- * ===============================
- */
-export const downloadCjUploadsSingle = async (groups: Map<string, TRow[]>, sourceLabel?: string) => {
-  const allRows: TRow[] = [];
-  for (const rows of groups.values()) {
-    for (const r of rows) allRows.push(r);
+const isAdminOrderFile = (fileName: string) =>
+  /^주문서_\d{4}(?:\d{4}|[-._]\d{1,2}[-._]\d{1,2})\.xlsx$/i.test(fileName);
+
+const belongsOnSmallSheet = (itemName: string) => {
+  for (const [, weight] of itemName.matchAll(/(\d+(?:\.\d+)?)\s*kg/gi)) {
+    const kg = Number(weight);
+    if (kg === 9 || (kg === 4.5 && itemName.includes("세트"))) return true;
+  }
+  return false;
+};
+
+export const downloadCjUploadsSingle = async (groups: Map<string, TRow[]>, originalFileName = "") => {
+  const rows = Array.from(groups.values()).flat();
+  const workbook = new ExcelJS.Workbook();
+  if (isAdminOrderFile(originalFileName)) {
+    const extraSmall: TRow[] = [];
+    const small: TRow[] = [];
+    const sorted = rows.map((row) => ({ row, itemName: toText(row.어드민품목명) }));
+    sorted.sort((a, b) => a.itemName.localeCompare(b.itemName, "ko"));
+    for (const { row, itemName } of sorted) {
+      const destination = belongsOnSmallSheet(itemName) ? small : extraSmall;
+      destination.push(row);
+    }
+    addCjWorksheet(workbook, "극소", extraSmall);
+    addCjWorksheet(workbook, "소", small);
+  } else {
+    addCjWorksheet(workbook, "Sheet1", rows);
   }
 
-  const buf = await makeCjWorkbookBuffer(allRows);
-  saveAs(new Blob([buf]), makeDatedFileName(`${sourceLabel ? `${sourceLabel}_` : ""}한섬누리_CJ제출용_통합엑셀.xlsx`));
+  const buffer = await workbook.xlsx.writeBuffer();
+  saveAs(new Blob([buffer]), makeDatedFileName("한섬누리_CJ제출용_통합엑셀.xlsx"));
 };

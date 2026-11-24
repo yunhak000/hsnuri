@@ -25,6 +25,7 @@ export type TJobState = {
   originalHeaders: string[];
   originalRowNumbers?: number[];
   originalWorkbookBuffer?: ArrayBuffer;
+  suplinSheetName?: string;
   replyTrackingByOrder?: Record<string, string[]>;
 
   // “품목명 단순 집계” 결과를 캐시(선택)

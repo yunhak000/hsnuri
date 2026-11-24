@@ -214,8 +214,8 @@ const makeFinalOriginalFileName = (
   return `${base}_운송장번호_반영완료_${count}건.xlsx`;
 };
 
-const fillTrackingInAllWorksheets = (
-  workbook: ExcelJS.Workbook,
+const fillTrackingInWorksheets = (
+  worksheets: ExcelJS.Worksheet[],
   headers: string[],
   rows: TRow[],
   replyTrackingByOrder: Record<string, string[]> = {},
@@ -232,7 +232,7 @@ const fillTrackingInAllWorksheets = (
   }
 
   const patches: TSheetPatch[] = [];
-  for (const worksheet of workbook.worksheets) {
+  for (const worksheet of worksheets) {
     const cells = new Map<string, TCellPatch>();
     const columns = new Map<string, number>();
     let lastHeaderColumn = 0;
@@ -299,15 +299,23 @@ export const downloadOriginalWithTracking = async (
   originalFileName: string,
   originalWorkbookBuffer?: ArrayBuffer,
   replyTrackingByOrder?: Record<string, string[]>,
+  suplinSheetName?: string,
 ) => {
   if (!originalWorkbookBuffer) {
     throw new Error("원본 파일이 저장되어 있지 않습니다. 원본 서식을 보존하려면 1단계에서 파일을 다시 업로드해 주세요.");
   }
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(originalWorkbookBuffer);
-  const patches = fillTrackingInAllWorksheets(workbook, headers, rows, replyTrackingByOrder);
+  const suplinSheet = suplinSheetName ? workbook.getWorksheet(suplinSheetName) : undefined;
+  if (suplinSheetName && !suplinSheet) {
+    throw new Error(`${originalFileName}: '${suplinSheetName}' 시트를 찾지 못했습니다.`);
+  }
+  const worksheets = suplinSheet ? [suplinSheet] : workbook.worksheets;
+  const patches = fillTrackingInWorksheets(worksheets, headers, rows, replyTrackingByOrder);
   const firstHeaders: string[] = [];
-  workbook.worksheets[0]?.getRow(1).eachCell((cell) => firstHeaders.push(toText(cell.value)));
+  if (worksheets[0] === workbook.worksheets[0]) {
+    worksheets[0]?.getRow(1).eachCell((cell) => firstHeaders.push(toText(cell.value)));
+  }
   const buffer = await patchOriginalWorkbook(originalWorkbookBuffer, patches, {
     removeFirstSheetHeader: isSabangnetHeaders(firstHeaders),
   });

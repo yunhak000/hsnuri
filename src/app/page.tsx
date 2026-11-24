@@ -295,7 +295,7 @@ export default function HomePage() {
         job.originalRows as TRow[],
       );
 
-      await downloadCjUploadsZip(groups, undefined, originalLabel(activeSource));
+      await downloadCjUploadsZip(groups);
 
       setStep2Done(true);
     } catch (e: unknown) {
@@ -319,7 +319,7 @@ export default function HomePage() {
         job.originalRows as TRow[],
       );
 
-      await downloadCjUploadsSingle(groups, originalLabel(activeSource));
+      await downloadCjUploadsSingle(groups, job.originalFileName);
 
       setStep2Done(true);
     } catch (e: unknown) {
@@ -404,9 +404,10 @@ export default function HomePage() {
       await downloadOriginalWithTracking(
         job.originalHeaders,
         job.originalRows as TRow[],
-        `${originalLabel(source)}_${job.originalFileName}`,
+        job.originalFileName,
         job.originalWorkbookBuffer,
         job.replyTrackingByOrder,
+        job.suplinSheetName,
       );
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "최종 엑셀 생성 중 오류가 발생했습니다.");

@@ -170,6 +170,7 @@ test("Sabangnet ZIP and combined exports map product, admin product and sales ch
   downloads = [];
   await downloadCjUploadsSingle(groups);
   await downloadCjUploadsZip(groups);
+  assert.match(downloads[1].name, /^\d{4}-\d{2}-\d{2}_한섬누리_CJ제출용_품목별엑셀\.zip$/);
   const zip = await require("jszip").loadAsync(await downloads[1].blob.arrayBuffer());
   const cases = [[await downloads[0].blob.arrayBuffer(), rows]];
   for (const row of rows) cases.push([await zip.file(`${row.상품약어}.xlsx`).async("nodebuffer"), [row]]);
@@ -186,6 +187,60 @@ test("Sabangnet ZIP and combined exports map product, admin product and sales ch
       assert.equal(ws.getCell(`O${number}`).value, row["★쇼핑몰 주문번호★"]);
     });
   }
+});
+
+test("admin CJ combined export sorts matching orders into two sheets with identical headers", async () => {
+  const { buildCjGroupedRows, downloadCjUploadsSingle } = load("src/lib/excel/writeCJUploads.ts");
+  const items = ["라 감귤 4.5kg", "다 감귤 4.5 KG 세트", "나 감귤 19kg", "가 감귤 9kg", "마 감귤 14.5kg 세트", "나 감귤 9KG"];
+  const rows = items.map((품목명, index) => ({ 상품주문번호: String(index + 1), 품목명, 원본엑셀상품명: "판매용 이름" }));
+  const groups = buildCjGroupedRows(Object.keys(rows[0]), rows);
+  downloads = [];
+  await downloadCjUploadsSingle(groups, "주문서_2026-11-24.xlsx");
+  assert.match(downloads[0].name, /^\d{4}-\d{2}-\d{2}_한섬누리_CJ제출용_통합엑셀\.xlsx$/);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await downloads[0].blob.arrayBuffer());
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["극소", "소"]);
+  const [extraSmall, small] = workbook.worksheets;
+  assert.deepEqual(extraSmall.getRow(1).values, small.getRow(1).values);
+  const column = extraSmall.getRow(1).values.indexOf("어드민품목명");
+  const readItems = (sheet) => sheet.getRows(2, sheet.rowCount - 1).map((row) => row.getCell(column).value);
+  assert.deepEqual(readItems(extraSmall), [items[2], items[0], items[4]]);
+  assert.deepEqual(readItems(small), [items[3], items[5], items[1]]);
+
+  await downloadCjUploadsSingle(groups, "주문서_견본.xlsx");
+  const regular = new ExcelJS.Workbook();
+  await regular.xlsx.load(await downloads[1].blob.arrayBuffer());
+  assert.deepEqual(regular.worksheets.map((sheet) => sheet.name), ["Sheet1"]);
+});
+
+test("Suplin upload and final tracking process only the named sheet", async () => {
+  const source = new ExcelJS.Workbook();
+  const { readOriginalFiles } = load("src/lib/excel/readOriginals.ts");
+  const { matchWorkspace } = load("src/lib/excel/matchWorkspace.ts");
+  const { downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  const first = source.addWorksheet("사방넷");
+  first.addRow(["사방넷 주문번호", "쇼핑몰명", "상품약어", "★쇼핑몰 주문번호★", "품목명", "운송장번호"]);
+  first.addRow(["S1", "쇼핑몰", "일반", "A", "일반", ""]);
+  const suplin = source.addWorksheet("11월 수플린 주문");
+  suplin.addRow(["상품주문번호", "품목명", "운송장번호"]);
+  suplin.addRow(["A", "수플린 품목", ""]);
+  const buffer = await source.xlsx.writeBuffer();
+  const fileName = "주문내역.xlsx";
+  const jobs = await readOriginalFiles([new File([buffer], fileName)]);
+  const workspace = { id: "current", jobs, uploadedReplyFiles: [], replyTrackingByOrder: {} };
+  const matched = matchWorkspace(workspace, new Map([["A", ["000123"]]]));
+  const job = matched.jobs["original-1"];
+  assert.equal(job.suplinSheetName, suplin.name);
+  assert.deepEqual(job.originalRows.map((row) => row.품목명), ["수플린 품목"]);
+
+  downloads = [];
+  await downloadOriginalWithTracking(job.originalHeaders, job.originalRows, job.originalFileName, job.originalWorkbookBuffer, job.replyTrackingByOrder, job.suplinSheetName);
+  assert.equal(downloads[0].name, "주문내역_운송장번호_반영완료_1건.xlsx");
+  const result = new ExcelJS.Workbook();
+  await result.xlsx.load(await downloads[0].blob.arrayBuffer());
+  assert.equal(result.getWorksheet(first.name).getCell("A1").value, "사방넷 주문번호");
+  assert.equal(result.getWorksheet(first.name).getCell("F2").value, "");
+  assert.equal(result.getWorksheet(suplin.name).getCell("C2").value, "000123");
 });
 
 test("final export fills matching orders across all original sheets without duplicating totals", async () => {
