@@ -195,7 +195,7 @@ test("admin CJ combined export sorts matching orders into two sheets with identi
   const rows = items.map((품목명, index) => ({ 상품주문번호: String(index + 1), 품목명, 원본엑셀상품명: "판매용 이름" }));
   const groups = buildCjGroupedRows(Object.keys(rows[0]), rows);
   downloads = [];
-  await downloadCjUploadsSingle(groups, "주문서_2026-11-24.xlsx");
+  await downloadCjUploadsSingle(groups, "주문서_20261124_091923.xlsx");
   assert.match(downloads[0].name, /^\d{4}-\d{2}-\d{2}_한섬누리_CJ제출용_통합엑셀\.xlsx$/);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await downloads[0].blob.arrayBuffer());
@@ -207,7 +207,7 @@ test("admin CJ combined export sorts matching orders into two sheets with identi
   assert.deepEqual(readItems(extraSmall), [items[2], items[0], items[4]]);
   assert.deepEqual(readItems(small), [items[3], items[5], items[1]]);
 
-  await downloadCjUploadsSingle(groups, "주문서_견본.xlsx");
+  await downloadCjUploadsSingle(groups, "사방넷_주문서_20261124_091923.xlsx");
   const regular = new ExcelJS.Workbook();
   await regular.xlsx.load(await downloads[1].blob.arrayBuffer());
   assert.deepEqual(regular.worksheets.map((sheet) => sheet.name), ["Sheet1"]);

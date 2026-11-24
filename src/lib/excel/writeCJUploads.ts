@@ -232,9 +232,6 @@ export const downloadCjUploadsZip = async (groups: Map<string, TRow[]>, onProgre
   saveAs(zipBlob, makeDatedFileName("한섬누리_CJ제출용_품목별엑셀.zip"));
 };
 
-const isAdminOrderFile = (fileName: string) =>
-  /^주문서_\d{4}(?:\d{4}|[-._]\d{1,2}[-._]\d{1,2})\.xlsx$/i.test(fileName);
-
 const belongsOnSmallSheet = (itemName: string) => {
   for (const [, weight] of itemName.matchAll(/(\d+(?:\.\d+)?)\s*kg/gi)) {
     const kg = Number(weight);
@@ -246,7 +243,7 @@ const belongsOnSmallSheet = (itemName: string) => {
 export const downloadCjUploadsSingle = async (groups: Map<string, TRow[]>, originalFileName = "") => {
   const rows = Array.from(groups.values()).flat();
   const workbook = new ExcelJS.Workbook();
-  if (isAdminOrderFile(originalFileName)) {
+  if (originalFileName.startsWith("주문서_")) {
     const extraSmall: TRow[] = [];
     const small: TRow[] = [];
     const sorted = rows.map((row) => ({ row, itemName: toText(row.어드민품목명) }));
