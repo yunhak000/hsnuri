@@ -9,6 +9,7 @@ import { makeDatedFileName } from "@/lib/utils/filename";
 import { normalizeHeader, toText } from "@/lib/utils/normalize";
 import { patchOriginalWorkbook, type TCellPatch, type TSheetPatch } from "@/lib/excel/patchOriginalWorkbook";
 import { isSabangnetHeaders } from "@/lib/excel/orderFormat";
+import { findSuplinWorksheet } from "@/lib/excel/read";
 
 import { getOriginalOrderKey } from "@/lib/utils/orderKey";
 
@@ -306,18 +307,25 @@ export const downloadOriginalWithTracking = async (
   }
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(originalWorkbookBuffer);
-  const suplinSheet = suplinSheetName ? workbook.getWorksheet(suplinSheetName) : undefined;
-  if (suplinSheetName && !suplinSheet) {
+  const isSuplinFile = originalFileName.includes("수플린");
+  const suplinSheet = isSuplinFile ? findSuplinWorksheet(workbook) : undefined;
+  if (isSuplinFile && !suplinSheet) {
+    throw new Error(`${originalFileName}: 이름에 '수플린'이 들어간 시트를 찾지 못했습니다.`);
+  }
+  const legacySheet = !isSuplinFile && suplinSheetName ? workbook.getWorksheet(suplinSheetName) : undefined;
+  if (!isSuplinFile && suplinSheetName && !legacySheet) {
     throw new Error(`${originalFileName}: '${suplinSheetName}' 시트를 찾지 못했습니다.`);
   }
-  const worksheets = suplinSheet ? [suplinSheet] : workbook.worksheets;
+  const worksheets = legacySheet ? [legacySheet] : workbook.worksheets;
   const patches = fillTrackingInWorksheets(worksheets, headers, rows, replyTrackingByOrder);
   const firstHeaders: string[] = [];
-  if (worksheets[0] === workbook.worksheets[0]) {
-    worksheets[0]?.getRow(1).eachCell((cell) => firstHeaders.push(toText(cell.value)));
+  const firstSheet = workbook.worksheets[0];
+  if (!suplinSheet && worksheets[0] === firstSheet) {
+    firstSheet?.getRow(1).eachCell((cell) => firstHeaders.push(toText(cell.value)));
   }
   const buffer = await patchOriginalWorkbook(originalWorkbookBuffer, patches, {
-    removeFirstSheetHeader: isSabangnetHeaders(firstHeaders),
+    headerSheetName: suplinSheet?.name ?? (isSabangnetHeaders(firstHeaders) ? firstSheet?.name : undefined),
+    moveHeaderSheetToFront: Boolean(suplinSheet),
   });
   saveAs(new Blob([buffer]), makeFinalOriginalFileName(originalFileName, headers, rows));
 };

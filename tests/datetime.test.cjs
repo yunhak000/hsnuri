@@ -243,6 +243,47 @@ test("Suplin upload and final tracking process only the named sheet", async () =
   assert.equal(result.getWorksheet(suplin.name).getCell("C2").value, "000123");
 });
 
+test("Suplin final export moves its sheet first, removes its header, and fills matching detail rows", async () => {
+  const { readOriginalFiles } = load("src/lib/excel/readOriginals.ts");
+  const { matchWorkspace } = load("src/lib/excel/matchWorkspace.ts");
+  const { downloadOriginalWithTracking } = load("src/lib/excel/applyTrackingToOriginal.ts");
+  const source = new ExcelJS.Workbook();
+  const detail = source.addWorksheet("품목별");
+  detail.addTable({
+    name: "DetailOrders", ref: "A1", headerRow: true,
+    columns: ["사방넷 주문번호", "쇼핑몰명", "상품약어", "★쇼핑몰 주문번호★", "품목명", "송장번호"].map((name) => ({ name })),
+    rows: [["S1", "쇼핑몰", "품목", "A", "품목", null]],
+  });
+  const notes = source.addWorksheet("Sheet1");
+  notes.getCell("A2").value = "메모";
+  const suplin = source.addWorksheet("11월 수플린 주문");
+  suplin.addRow(["상품주문번호", "품목명", "송장번호"]);
+  suplin.addRow(["A", "품목", ""]);
+  source.views = [{ firstSheet: 1, activeTab: 2, visibility: "visible" }];
+
+  const fileName = "수플린_주문내역.xlsx";
+  const jobs = await readOriginalFiles([new File([await source.xlsx.writeBuffer()], fileName)]);
+  const matched = matchWorkspace({ id: "current", jobs, uploadedReplyFiles: [], replyTrackingByOrder: {} }, new Map([["A", ["000123"]]]));
+  const job = matched.jobs["original-1"];
+
+  for (const sheetName of [job.suplinSheetName, undefined]) {
+    downloads = [];
+    await downloadOriginalWithTracking(job.originalHeaders, job.originalRows, job.originalFileName, job.originalWorkbookBuffer, job.replyTrackingByOrder, sheetName);
+    assert.equal(downloads[0].name, "수플린_주문내역_운송장번호_반영완료_1건.xlsx");
+    const result = new ExcelJS.Workbook();
+    await result.xlsx.load(await downloads[0].blob.arrayBuffer());
+    assert.deepEqual(result.worksheets.map((sheet) => sheet.name), [suplin.name, detail.name, notes.name]);
+    assert.equal(result.views[0].activeTab, 0);
+    assert.equal(result.views[0].firstSheet, 0);
+    assert.deepEqual(result.getWorksheet(suplin.name).getRow(1).values.slice(1), ["A", "품목", "000123"]);
+    assert.equal(result.getWorksheet(suplin.name).rowCount, 1);
+    assert.equal(result.getWorksheet(detail.name).getCell("F1").value, "송장번호");
+    assert.equal(result.getWorksheet(detail.name).getCell("F2").value, "000123");
+    assert.equal(result.getWorksheet(detail.name).getTable("DetailOrders").table.headerRow, true);
+    assert.equal(result.getWorksheet(notes.name).getCell("A2").value, "메모");
+  }
+});
+
 test("final export fills matching orders across all original sheets without duplicating totals", async () => {
   const source = new ExcelJS.Workbook();
   const all = source.addWorksheet("전체 주문");

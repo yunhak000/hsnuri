@@ -49,7 +49,7 @@ const shiftReferenceUp = (reference: string) => reference.replace(
 
 const removeHeaderRow = (document: Document) => {
   const sheetData = document.getElementsByTagNameNS(NS, "sheetData")[0];
-  if (!sheetData) throw new Error("사방넷 첫 번째 시트의 데이터를 찾지 못했습니다.");
+  if (!sheetData) throw new Error("헤더를 삭제할 시트의 데이터를 찾지 못했습니다.");
   for (const row of children(sheetData, "row")) {
     const rowNumber = Number(row.getAttribute("r"));
     if (rowNumber === 1) {
@@ -85,7 +85,7 @@ const removeHeaderRow = (document: Document) => {
 export const patchOriginalWorkbook = async (
   buffer: ArrayBuffer,
   patches: TSheetPatch[],
-  options: { removeFirstSheetHeader?: boolean } = {},
+  options: { headerSheetName?: string; moveHeaderSheetToFront?: boolean } = {},
 ) => {
   const zip = await JSZip.loadAsync(buffer);
   const serializer = new XMLSerializer();
@@ -93,7 +93,8 @@ export const patchOriginalWorkbook = async (
   const relationships = parse(await requirePart(zip, "xl/_rels/workbook.xml.rels"));
   const targets = new Map(Array.from(relationships.getElementsByTagName("Relationship"))
     .map((node) => [node.getAttribute("Id"), resolvePart(node.getAttribute("Target") ?? "")]));
-  const sheetParts = new Map(Array.from(workbook.getElementsByTagNameNS(NS, "sheet"))
+  const sheets = Array.from(workbook.getElementsByTagNameNS(NS, "sheet"));
+  const sheetParts = new Map(sheets
     .map((sheet) => [sheet.getAttribute("name"), targets.get(sheet.getAttributeNS(REL_NS, "id"))]));
   const styles = parse(await requirePart(zip, "xl/styles.xml"));
   const fills = styles.getElementsByTagNameNS(NS, "fills")[0];
@@ -210,15 +211,14 @@ export const patchOriginalWorkbook = async (
     zip.file(path, serializer.serializeToString(document));
   }
   if (styleIds.size > 0) zip.file("xl/styles.xml", serializer.serializeToString(styles));
-  if (options.removeFirstSheetHeader) {
-    const firstSheet = workbook.getElementsByTagNameNS(NS, "sheet")[0];
-    const path = firstSheet && sheetParts.get(firstSheet.getAttribute("name"));
-    if (!path) throw new Error("사방넷 첫 번째 시트를 찾지 못했습니다.");
+  if (options.headerSheetName) {
+    const path = sheetParts.get(options.headerSheetName);
+    if (!path) throw new Error(`'${options.headerSheetName}' 시트를 찾지 못했습니다.`);
     const document = parse(await requirePart(zip, path));
     removeHeaderRow(document);
     zip.file(path, serializer.serializeToString(document));
 
-    // 첫 시트에 연결된 표가 있다면 제목 없는 표로 조정하고 다른 시트의 표는 보존한다.
+    // 헤더를 삭제한 시트의 표와 필터 범위를 조정한다.
     const directory = path.slice(0, path.lastIndexOf("/"));
     const fileName = path.slice(path.lastIndexOf("/") + 1);
     const relationPart = zip.file(`${directory}/_rels/${fileName}.rels`);
@@ -242,6 +242,25 @@ export const patchOriginalWorkbook = async (
         }
         zip.file(tablePath, serializer.serializeToString(tableDocument));
       }
+    }
+  }
+  if (options.moveHeaderSheetToFront) {
+    const index = sheets.findIndex((sheet) => sheet.getAttribute("name") === options.headerSheetName);
+    if (index > 0) {
+      const sheet = sheets[index];
+      sheet.parentNode?.insertBefore(sheet, sheets[0]);
+      // 탭 위치로 저장되는 참조가 순서 변경 후에도 같은 시트를 가리키도록 조정한다.
+      const moveIndex = (previous: number) => previous === index ? 0 : previous < index ? previous + 1 : previous;
+      for (const view of Array.from(workbook.getElementsByTagNameNS(NS, "workbookView"))) {
+        view.setAttribute("activeTab", String(moveIndex(Number(view.getAttribute("activeTab") ?? 0))));
+        view.setAttribute("firstSheet", "0");
+      }
+      for (const name of Array.from(workbook.getElementsByTagNameNS(NS, "definedName"))) {
+        if (name.hasAttribute("localSheetId")) {
+          name.setAttribute("localSheetId", String(moveIndex(Number(name.getAttribute("localSheetId")))));
+        }
+      }
+      zip.file("xl/workbook.xml", serializer.serializeToString(workbook));
     }
   }
   return zip.generateAsync({ type: "arraybuffer" });

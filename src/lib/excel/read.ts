@@ -45,13 +45,16 @@ const pickWorksheet = (workbook: ExcelJS.Workbook) => {
   return worksheets[0] ?? null;
 };
 
+export const findSuplinWorksheet = (workbook: ExcelJS.Workbook) =>
+  workbook.getWorksheet("수플린")
+  ?? workbook.worksheets.find((sheet) => sheet.name.includes("수플린"));
+
 export const readExcelFile = async (file: File): Promise<TReadExcelResult> => {
   const buffer = await file.arrayBuffer();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
 
-  const suplinSheet = workbook.getWorksheet("수플린")
-    ?? workbook.worksheets.find((sheet) => sheet.name.includes("수플린"));
+  const suplinSheet = findSuplinWorksheet(workbook);
   if (!suplinSheet && file.name.includes("수플린")) {
     throw new Error(`${file.name}: 이름에 '수플린'이 들어간 시트를 찾지 못했습니다.`);
   }
